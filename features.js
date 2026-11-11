@@ -1,0 +1,60 @@
+/* Monthly safeguards and account tools. These views never rewrite bill amounts. */
+const Features=(()=>{
+  let refreshing=false;
+  const when=iso=>new Intl.DateTimeFormat(state.lang==='bn'?'bn-BD':'en-GB',{timeZone:'Asia/Dhaka',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(iso));
+  function backupNeeded(){return !state.lastBackupAt||!!state.backupPendingSince||Date.now()-new Date(state.lastBackupAt).getTime()>7*86400000;}
+  function backupCopy(){return state.lastBackupAt?state.lastBackupDestination==='google-drive'?tr(`Last Google Drive backup saved: ${when(state.lastBackupAt)}.`,`সর্বশেষ Google Drive ব্যাকআপ সংরক্ষিত: ${when(state.lastBackupAt)}।`):tr(`Last backup export requested: ${when(state.lastBackupAt)}.`,`সর্বশেষ ব্যাকআপ এক্সপোর্টের অনুরোধ: ${when(state.lastBackupAt)}।`):tr('No backup has been saved from these records yet.','এই হিসাব থেকে এখনও ব্যাকআপ রাখা হয়নি।');}
+  function updateBackup(){
+    const el=$('#backupReminder');
+    if(el){el.hidden=!backupNeeded()&&!storageBlocked;el.innerHTML=`<div><strong>${storageBlocked?tr('Export a recovery copy','পুনরুদ্ধারের কপি নিন'):state.backupPendingSince?tr('Month finalized — back up your records','মাস চূড়ান্ত হয়েছে — ব্যাকআপ নিন'):tr('Keep a backup of your records','হিসাবের ব্যাকআপ রাখুন')}</strong><p>${backupCopy()} ${tr('Keep a backup outside this browser, in a safe file or your Google Drive app-data folder.','এই ব্রাউজারের বাইরে নিরাপদ ফাইলে অথবা Google Drive-এর অ্যাপ-ডেটা ফোল্ডারে ব্যাকআপ রাখুন।')}</p></div>${btn(tr('Export backup','ব্যাকআপ নিন'),'backup','small')}`;}
+    const detail=$('#backupStatusDetail');if(detail)detail.textContent=backupCopy();
+  }
+  function updateCarry(){
+    const root=$('#carryWarning');if(!root||!C.carryIssues)return;
+    const issues=C.carryIssues(state);root.hidden=!issues.length;
+    if(issues.length){const months=[...new Set(issues.map(i=>i.targetKey))];root.innerHTML=`<div><strong>${tr('Carried arrears need review','পরের মাসে নেওয়া বকেয়া যাচাই করুন')}</strong><p>${tr(`${issues.length} carried balance(s) need checking in ${months.map(monthLabel).join(', ')}. Earlier records changed; opening arrears have been kept as entered.`,`${months.map(monthLabel).join(', ')}-এ ${num(issues.length)}টি বকেয়া যাচাই করা দরকার। আগের হিসাব বদলেছে; শুরুর বকেয়া আগে যেমন ছিল তেমন রাখা হয়েছে।`)}</p></div>${btn(tr('Review arrears','বকেয়া যাচাই'),'carry-review','small')}`;}
+  }
+  function updateUsage(id){
+    const row=document.querySelector(`[data-tenant="${CSS.escape(id)}"]`);if(!row||!C.usageAlert)return;
+    let hint=row.querySelector('[data-usage-alert]');
+    if(!hint){hint=document.createElement('p');hint.className='usage-warning';hint.dataset.usageAlert=id;hint.id='usage-'+id;row.appendChild(hint);}
+    const alert=C.usageAlert(state,state.active,id);hint.hidden=!alert;
+    if(alert)hint.textContent=tr(`Check usage: ${num(alert.current)} units, compared with an average of ${num(alert.average)} across ${alert.months} earlier nonzero month(s). Verify the reading.`,`ব্যবহার যাচাই করুন: ${num(alert.current)} ইউনিট; আগের ${num(alert.months)}টি শূন্য নয় এমন মাসের গড় ${num(alert.average)} ইউনিট। রিডিং মিলিয়ে নিন।`);
+    const current=row.querySelector('[data-reading="curr"]');if(current)current.setAttribute('aria-describedby','err-'+id+(alert?' usage-'+id:''));
+  }
+  function mount(){
+    const workspace=$('#workspace');if(!workspace)return;
+    if(!$('#featureNotices')){const host=document.createElement('section');host.id='featureNotices';host.className='feature-notices';host.setAttribute('aria-label',tr('Record reminders','হিসাবের অনুস্মারক'));host.innerHTML='<div id="carryWarning" class="feature-banner carry-warning" role="status" hidden></div><div id="backupReminder" class="feature-banner" hidden></div>';workspace.prepend(host);}
+    if(view==='billing')for(const t of m().tenants){const row=document.querySelector(`[data-tenant="${CSS.escape(t.id)}"]`),identity=row?.querySelector('.tenant-identity');if(identity&&!identity.querySelector('[data-action="account-history"]'))identity.insertAdjacentHTML('beforeend',btn(tr('Account history','হিসাবের ইতিহাস'),'account-history','account-history-link',t.id));updateUsage(t.id);}
+    if(view==='settings'&&!$('#backupStatusDetail')){const target=$('.export-actions');if(target)target.insertAdjacentHTML('afterend','<p id="backupStatusDetail" class="hint backup-status-detail"></p>');}
+    updateBackup();updateCarry();
+  }
+  function onSaved(){if(refreshing)return;refreshing=true;try{updateBackup();updateCarry();}finally{refreshing=false;}}
+  function markFinalized(){state.backupPendingSince=new Date().toISOString();}
+  function accountHistory(id){
+    const rows=C.accountHistory(state,id),latest=rows.at(-1);if(!latest)return notice(tr('No saved months were found for this flat.','এই ফ্ল্যাটের কোনো সংরক্ষিত মাস পাওয়া যায়নি।'),true);
+    const last=latest.bill,received=C.round(rows.reduce((sum,row)=>sum+row.bill.paid,0));
+    modal(esc(latest.tenant.name)+' · '+tr('Account history','হিসাবের ইতিহাস'),`<div class="account-summary">${kv(tr('Latest recorded month','সর্বশেষ নথিভুক্ত মাস'),monthLabel(latest.key))}${kv(!last.invalid&&last.balance<0?tr('Latest credit available','সর্বশেষ অগ্রিম জমা'):tr('Latest month balance','সর্বশেষ মাসের বকেয়া'),last.invalid?tr('Check reading','রিডিং যাচাই করুন'):money(Math.abs(last.balance)))}${kv(tr('Payments across these months','এই মাসগুলোতে প্রাপ্ত পেমেন্ট'),money(received))}</div><p class="hint">${tr('Each balance is that month’s snapshot. Carried arrears appear again in later months, so monthly balances should not be added together.','প্রতিটি বকেয়া সেই মাসের হিসাব। পরের মাসে আগের বকেয়া আবার থাকতে পারে, তাই মাসগুলোর বকেয়া যোগ করবেন না।')}</p><div class="account-history-list">${rows.slice().reverse().map(row=>`<article class="account-history-row" data-month="${row.key}"><div class="account-row-heading"><div><h3>${monthLabel(row.key)}</h3><p>${esc(row.tenant.name)} · ${row.bill.invalid?tr('Check reading','রিডিং যাচাই করুন'):row.bill.balance<0?tr('Credit available','অগ্রিম জমা'):statusLabel(row.bill.status)}</p></div>${btn(tr('Open month','মাস খুলুন'),'account-open-month','small',row.key)}</div><dl class="account-figures"><div><dt>${tr('Units','ইউনিট')}</dt><dd>${row.bill.invalid?'—':num(row.bill.units)}</dd></div><div><dt>${tr('Bill total','মোট বিল')}</dt><dd>${row.bill.invalid?'—':money(row.bill.total)}</dd></div><div><dt>${tr('Paid','পরিশোধিত')}</dt><dd>${money(row.bill.paid)}</dd></div><div><dt>${!row.bill.invalid&&row.bill.balance<0?tr('Credit','অগ্রিম'):tr('Balance','বকেয়া')}</dt><dd>${row.bill.invalid?'—':money(Math.abs(row.bill.balance))}</dd></div></dl>${row.tenant.payments.length?`<details><summary>${tr('Payment records','পেমেন্টের তালিকা')} (${num(row.tenant.payments.length)})</summary>${row.tenant.payments.map(p=>`<div class="account-payment"><span>${dateLabel(p.date)}${p.note?`<small>${esc(p.note)}</small>`:''}</span><strong>${money(p.amount)}</strong></div>`).join('')}</details>`:''}</article>`).join('')}</div>`,btn(tr('Close','বন্ধ করুন'),'close'));
+  }
+  function reviewCarry(){
+    const issues=C.carryIssues(state);
+    const reason=i=>i.reason==='source-month-missing'?tr('The source month is missing. Restore it from a backup to verify this balance.','আগের মাস নেই। বকেয়া যাচাই করতে ব্যাকআপ থেকে তা ফিরিয়ে আনুন।'):i.reason==='source-tenant-missing'?tr('The source flat is missing. Check the earlier month or restore a backup.','আগের মাসে ফ্ল্যাটটি নেই। আগের মাস যাচাই করুন অথবা ব্যাকআপ ফিরিয়ে আনুন।'):i.reason==='source-reading-invalid'?tr('Correct the source month’s invalid reading before reviewing this balance.','বকেয়া যাচাইয়ের আগে আগের মাসের ভুল রিডিং ঠিক করুন।'):i.sourceBalance<0?tr('The source month now has a credit. Review both months before keeping the current opening arrears.','আগের মাসে এখন অগ্রিম জমা আছে। বর্তমান শুরুর বকেয়া রাখার আগে দুই মাস যাচাই করুন।'):tr('Payments or charges in the earlier month changed after this amount was carried forward.','এই বকেয়া নেওয়ার পরে আগের মাসের পেমেন্ট বা চার্জ বদলেছে।');
+    modal(tr('Review carried arrears','পরের মাসের বকেয়া যাচাই'),`<p class="hint">${tr('Review each source and target month. Opening arrears stay unchanged. “Keep current” acknowledges the source balance you have checked; it does not change any bill.','আগের ও পরের মাসের হিসাব যাচাই করুন। শুরুর বকেয়া অপরিবর্তিত থাকবে। “বর্তমান বকেয়া রাখুন” দিয়ে যাচাইয়ের স্বীকৃতি দেওয়া হয়; কোনো বিল বদলায় না।')}</p>${issues.length?issues.map(i=>`<article class="carry-review-row"><h3>${esc(i.name)}</h3><p>${monthLabel(i.sourceKey)} → ${monthLabel(i.targetKey)}</p>${kv(tr('Opening arrears kept in target','পরের মাসে রাখা শুরুর বকেয়া'),money(i.opening))}${kv(tr('Current source balance','আগের মাসের বর্তমান বকেয়া'),i.sourceBalance===null?'—':money(i.sourceBalance))}${i.expected!==null?kv(tr('Amount that would carry now','এখন নিলে যে বকেয়া হবে'),money(i.expected)):''}<p class="hint">${reason(i)}</p>${i.inferred?`<p class="hint">${tr('This older record has no saved carry-over baseline; compare it with the current opening arrears.','এই পুরোনো হিসাবে বকেয়া নেওয়ার সময়কার আলাদা তথ্য নেই; বর্তমান শুরুর বকেয়ার সাথে তুলনা করুন।')}</p>`:''}<div class="carry-review-actions">${btn(tr('Open source','আগের মাস খুলুন'),'carry-open','small',i.sourceKey)}${btn(tr('Open target','পরের মাস খুলুন'),'carry-open','small',i.targetKey)}<button class="small" data-action="carry-ack" data-id="${esc(i.targetKey+'|'+i.tenantId)}" ${i.sourceBalance===null?'disabled':''}>${tr('Keep current opening arrears','বর্তমান শুরুর বকেয়া রাখুন')}</button></div></article>`).join(''):`<p class="section-gap">${tr('No carried arrears need review.','পরের মাসে নেওয়া কোনো বকেয়া যাচাই করা বাকি নেই।')}</p>`}`,btn(tr('Close','বন্ধ করুন'),'close'));
+  }
+  function openMonth(key){if(!state.months[key])return notice(tr('That month is missing. Restore a backup containing it to review the balance.','মাসটি নেই। বকেয়া যাচাই করতে ওই মাসসহ ব্যাকআপ ফিরিয়ে আনুন।'),true);$('#editor').close();state.active=key;query='';filter='all';view='billing';render();if(location.hash!=='#billing')location.hash='billing';$('#workspace').focus();}
+  function enterReading(e){
+    const input=e.target;if(e.key!=='Enter'||e.isComposing||!input.matches?.('[data-reading="curr"]')||input.disabled||m().finalizedAt)return;
+    e.preventDefault();if(storageBlocked)return notice(tr('Resolve the save conflict before entering more readings.','আর রিডিং লেখার আগে সংরক্ষণের সমস্যা সমাধান করুন।'),true);
+    const tenant=flat(input.dataset.id);if(!input.checkValidity()||!tenant||C.bill(tenant,m()).invalid){input.reportValidity();input.focus();input.select();notice(tr('Correct this current reading before moving to the next flat.','পরের ফ্ল্যাটে যাওয়ার আগে এই বর্তমান রিডিং ঠিক করুন।'),true);return;}
+    const inputs=[...document.querySelectorAll('#tenantRows [data-reading="curr"]')].filter(el=>!el.disabled&&!el.closest('.tenant-row').hidden),index=inputs.indexOf(input),next=inputs[index+1];
+    if(next){next.focus();next.select();}else notice(tr('Last visible flat reached. Check the save status above.','শেষ দৃশ্যমান ফ্ল্যাটে পৌঁছেছেন। উপরের সংরক্ষণের অবস্থা যাচাই করুন।'));
+  }
+  document.addEventListener('keydown',enterReading);
+  document.addEventListener('click',e=>{const button=e.target.closest('[data-action]');if(!button)return;const action=button.dataset.action,id=button.dataset.id;try{
+    if(action==='account-history')accountHistory(id);
+    if(action==='account-open-month'||action==='carry-open')openMonth(id);
+    if(action==='carry-review')reviewCarry();
+    if(action==='carry-ack'){const [key,tenantId]=id.split('|');C.reviewCarry(state,key,tenantId);save();reviewCarry();}
+  }catch(error){notice(error.message==='carry-source-missing'?tr('Restore the missing source record before reviewing this balance.','বকেয়া যাচাইয়ের আগে আগের অনুপস্থিত হিসাব ফিরিয়ে আনুন।'):errorText(error),true);}});
+  return {mount,onSaved,updateUsage,accountHistory,reviewCarry,markFinalized,backupNeeded};
+})();

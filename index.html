@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0957ce">
+<meta name="description" content="Monthly electricity readings, tenant bills and collections, saved on your device.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/ https://www.googleapis.com; frame-src https://accounts.google.com/gsi/; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>Building Ledger · Electricity bills</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="modern-ui.css">
+<link rel="stylesheet" href="print-design.css">
+<link rel="stylesheet" href="voucher-design.css">
+<link rel="stylesheet" href="print-selection.css">
+<link rel="stylesheet" href="features.css">
+<link rel="stylesheet" href="drive-backup.css">
+<link rel="stylesheet" href="bill-messaging.css">
+<script src="core.js" defer></script><script src="print-design.js" defer></script><script src="print-selection.js" defer></script><script src="features.js" defer></script><script src="drive-api.js" defer></script><script src="drive-backup.js" defer></script><script src="bill-messaging.js" defer></script><script src="app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#workspace">Skip to content</a>
+<header class="app-header no-print"><div class="header-inner">
+<a class="brand" href="#billing"><img src="icon.svg" alt="" width="32" height="32"><span>Building Ledger<small id="workspaceName">Electricity & collections</small></span></a>
+<div class="header-tools"><span id="saveStatus" role="status"></span><button id="install" hidden>Install app</button><button id="language" lang="bn">বাংলা</button></div>
+</div><nav id="navigation" aria-label="Main navigation"></nav></header>
+<div id="notice" class="notice no-print" role="status" hidden></div>
+<main id="workspace" tabindex="-1"></main>
+<dialog id="editor" aria-labelledby="dialogTitle"></dialog>
+<dialog id="printStudio" aria-labelledby="printTitle"></dialog>
+<div id="printArea"></div>
+<input id="importFile" type="file" accept="application/json,.json" hidden>
+</body></html>

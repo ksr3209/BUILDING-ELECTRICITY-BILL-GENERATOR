@@ -1,0 +1,23 @@
+/* Print-center selection controls share the app's role tokens and native checkboxes. */
+.print-selection{padding-block:20px;border-block-end:1px solid var(--color-rule);margin-block-end:20px;min-width:0}
+.print-selection h3{font-size:14px;font-weight:650;line-height:1.4;margin-block-end:14px;color:var(--color-text)}
+.print-selection>label[for="printScope"]{font-size:12px;margin-block-end:6px}
+.print-selection #printScope{width:100%;min-width:0;min-height:44px;font-size:13px}
+.print-selection .hint{font-size:12px;line-height:1.55;margin-block-start:8px;color:var(--color-muted)}
+.print-zero-option{font-size:13px;line-height:1.45;margin-block-start:10px;min-height:44px}
+.print-zero-help,.print-list-hint{font-size:11px;line-height:1.55;color:var(--color-muted);margin:0}
+.print-custom-selection{margin-block-start:18px;min-width:0}
+.print-custom-selection legend{font-size:13px;font-weight:600;margin-block-end:6px}
+.print-select-all{font-size:12px;min-height:44px;border-block-end:1px solid var(--color-rule);margin-block-end:8px}
+.print-flat-list{max-height:272px;overflow-y:auto;overscroll-behavior:contain;border:1px solid var(--color-control);border-radius:10px;background:var(--color-surface);scrollbar-gutter:stable;min-width:0}
+.print-flat-choice{display:flex;align-items:center;gap:9px;padding:10px;min-height:58px;cursor:pointer;margin:0;border-block-end:1px solid var(--color-rule);font-size:12px;line-height:1.4;min-width:0}
+.print-flat-choice:last-child{border-block-end:0}
+.print-flat-choice>input{margin:0;flex-shrink:0}
+.print-flat-identity{display:block;min-width:0;flex:1;overflow-wrap:anywhere}
+.print-flat-identity strong{display:block;font-size:12px;line-height:1.4;font-weight:600;color:var(--color-text)}
+.print-flat-identity small{display:block;font-size:10px;line-height:1.5;font-weight:400;margin-block-start:3px;color:var(--color-muted)}
+.print-flat-balance{max-width:46%;overflow-wrap:anywhere;text-align:end;font-size:11px;font-weight:600;flex-shrink:0;color:var(--color-text)}
+.print-list-hint{margin-block-start:8px}
+.print-selection-count{font-size:12px;font-weight:600;line-height:1.5;color:var(--color-text);margin-block-start:14px}
+@media(hover:hover){.print-flat-choice:hover{background:var(--color-subtle)}}
+@media(max-width:760px){.print-selection #printScope{font-size:14px}.print-flat-list{max-height:280px}.print-flat-choice{padding:12px;min-height:64px}.print-flat-identity strong{font-size:13px}.print-flat-identity small{font-size:11px}.print-flat-balance{font-size:12px}.print-selection-count{font-size:13px}.print-zero-help,.print-list-hint{font-size:12px}}

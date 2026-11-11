@@ -1,0 +1,5 @@
+const CACHE='building-ledger-v3-10';
+const FILES=['./','./index.html','./styles.css','./modern-ui.css','./print-design.css','./voucher-design.css','./print-selection.css','./features.css','./drive-backup.css','./bill-messaging.css','./print-selection.js','./features.js','./drive-api.js','./drive-backup.js','./bill-messaging.js','./print-design.js','./core.js','./app.js','./icon.svg','./manifest.json'];
+self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)));});
+self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('building-ledger-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));});
+self.addEventListener('fetch',e=>{if(e.request.method!=='GET'||new URL(e.request.url).origin!==self.location.origin)return;e.respondWith(fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy));}return r;}).catch(()=>caches.match(e.request).then(r=>r||(e.request.mode==='navigate'?caches.match('./index.html'):Response.error()))));});

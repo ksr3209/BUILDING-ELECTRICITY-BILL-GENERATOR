@@ -1,0 +1,2838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Building Electricity Bill Calculator — DPDC Tariff</title>
+
+<!-- Security: this app never loads external scripts/styles/fonts, so a strict
+     same-origin CSP costs nothing and blocks injected-script execution even if
+     a future edit reintroduces an unescaped innerHTML sink. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none';">
+<meta name="referrer" content="no-referrer">
+
+<meta name="theme-color" content="#1c2e37">
+<meta name="description" content="Calculate your DPDC/BERC electricity bill and manage fixed-rate sub-meter billing for up to 30 flats, offline-capable.">
+
+<!-- Home-screen support -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bill Calculator">
+
+<style>
+  :root{
+    --ink:#16232a;
+    --navy:#1c2e37;
+    --navy-2:#233a45;
+    --paper:#eee9dd;
+    --paper-2:#ffffff;
+    --amber:#d98e30;
+    --amber-2:#b8721f;
+    --green:#3f7a5c;
+    --red:#b34a3d;
+    --line:#dcd4c2;
+    --mono: 'SF Mono', 'Courier New', monospace;
+    --nav-h: 62px;
+    --topbar-h: 54px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Bengali","Kohinoor Bangla","Nirmala UI",Helvetica,Arial,sans-serif;
+    line-height:1.45;
+    font-size:16px;
+    -webkit-text-size-adjust:100%;
+  }
+  button, input, select{ font-family:inherit; }
+  input, select{ font-size:16px; } /* prevents iOS auto-zoom on focus */
+
+  .app-shell{max-width:560px;margin:0 auto;min-height:100vh;background:var(--paper);position:relative;}
+
+  /* ---------- top bar ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:30;
+    display:flex;align-items:center;gap:10px;
+    background:var(--navy);color:#f3efe6;
+    padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+    min-height:var(--topbar-h);
+  }
+  .dial-sm{
+    flex:0 0 auto;width:30px;height:30px;border-radius:50%;
+    border:2px solid var(--amber);position:relative;
+    background:radial-gradient(circle at 35% 30%, #2c454f, #16232a 70%);
+  }
+  .dial-sm::before{
+    content:"";position:absolute;left:50%;top:50%;width:2px;height:10px;
+    background:var(--amber);transform-origin:bottom center;
+    transform:translate(-50%,-100%) rotate(35deg);
+  }
+  .dial-sm::after{
+    content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;
+    background:var(--amber);border-radius:50%;transform:translate(-50%,-50%);
+  }
+  .topbar-title{font-size:1.02rem;font-weight:700;letter-spacing:.1px;flex:1;}
+  .topbar-title small{display:block;font-size:.68rem;font-weight:400;color:#c9d3d2;margin-top:1px;}
+  #installBtn{
+    display:none;align-items:center;gap:5px;
+    background:var(--amber);color:#fff;border:none;border-radius:8px;
+    padding:8px 11px;font-size:.76rem;font-weight:700;cursor:pointer;white-space:nowrap;
+  }
+  #installBtn:active{background:var(--amber-2);}
+
+  .offline-banner{
+    display:none;background:#b34a3d;color:#fff;text-align:center;font-size:.76rem;
+    font-weight:600;padding:7px 12px;
+  }
+  .offline-banner.show{display:block;}
+
+  .content{
+    padding:16px 16px calc(var(--nav-h) + 100px + env(safe-area-inset-bottom));
+  }
+
+  .panel{display:none;}
+  .panel.active{display:block;}
+
+  /* ---------- cards ---------- */
+  .card{
+    background:var(--paper-2);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px 16px;
+    margin-bottom:14px;
+  }
+  .card h2{
+    margin:0 0 4px;font-size:1rem;color:var(--navy);
+    display:flex;align-items:center;gap:8px;
+  }
+  .card h2 .num{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:22px;height:22px;border-radius:50%;flex:0 0 auto;
+    background:var(--amber);color:#fff;font-size:.72rem;font-weight:700;
+  }
+  .card .hint{font-size:.8rem;color:#83786a;margin:0 0 12px;}
+
+  details.card{padding:0;}
+  details.card summary{
+    list-style:none;cursor:pointer;padding:16px;display:flex;align-items:center;gap:8px;
+    font-size:1rem;color:var(--navy);font-weight:700;
+  }
+  details.card summary::-webkit-details-marker{display:none;}
+  details.card summary::after{
+    content:"▾";margin-left:auto;color:#83786a;transition:transform .15s ease;font-size:.9rem;
+  }
+  details.card[open] summary::after{transform:rotate(180deg);}
+  details.card .details-body{padding:0 16px 16px;}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .grid.single{grid-template-columns:1fr;}
+  label{font-size:.78rem;font-weight:600;color:#4b5860;display:block;margin-bottom:5px;}
+  input[type=number], input[type=text], input[type=date], input[type=month], select{
+    width:100%;min-height:44px;padding:9px 10px;border:1px solid var(--line);border-radius:9px;
+    background:#fbf9f4;color:var(--ink);
+  }
+  input:focus, select:focus{outline:2px solid var(--amber);outline-offset:1px;}
+  .field{margin-bottom:2px;}
+  .checkline{display:flex;align-items:center;gap:10px;font-size:.85rem;color:#4b5860;margin-top:12px;min-height:24px;}
+  .checkline input{width:18px;height:18px;flex:0 0 auto;}
+
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+  button.primary{
+    background:var(--amber);color:#fff;border:none;border-radius:10px;
+    min-height:48px;padding:0 20px;font-size:.92rem;font-weight:700;cursor:pointer;flex:1 1 auto;
+  }
+  button.primary:active{background:var(--amber-2);}
+  button.ghost{
+    background:transparent;color:var(--navy-2);border:1px solid var(--line);
+    border-radius:10px;min-height:44px;padding:0 14px;font-size:.84rem;font-weight:600;cursor:pointer;flex:1 1 auto;
+  }
+  button.ghost:active{border-color:var(--navy-2);background:#f3efe6;}
+
+  /* ---------- results ---------- */
+  .result{background:var(--navy);color:#f3efe6;border-radius:14px;padding:18px 16px;margin-top:2px;}
+  .result h3{margin:0 0 12px;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:#c9d3d2;font-weight:700;}
+  .breakdown-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px dashed rgba(255,255,255,0.15);font-size:.87rem;}
+  .breakdown-row.total{border-bottom:none;margin-top:6px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.3);font-size:1.2rem;font-weight:700;color:var(--amber);}
+  .breakdown-row .label{color:#dfe6e2;}
+  .breakdown-row .val{font-family:var(--mono);white-space:nowrap;}
+
+  .stat-grid{display:grid;grid-template-columns:1fr;gap:10px;}
+  .stat-box{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:12px;padding:13px 15px;}
+  .stat-box .stat-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#9fb0ac;font-weight:700;margin-bottom:5px;}
+  .stat-box .stat-val{font-family:var(--mono);font-size:1.35rem;font-weight:700;color:#f3efe6;}
+  .stat-box.accent .stat-val{color:var(--amber);}
+  .stat-box .stat-sub{font-size:.72rem;color:#9fb0ac;margin-top:4px;}
+
+  /* ---------- slab table ---------- */
+  table.slabtable{width:100%;border-collapse:collapse;font-size:.83rem;}
+  .slabtable th,.slabtable td{padding:7px 4px;text-align:right;border-bottom:1px solid var(--line);}
+  .slabtable td:first-child, .slabtable th:first-child{text-align:left;}
+  .slabtable th{color:#7a7264;font-weight:600;font-size:.68rem;text-transform:uppercase;}
+  .slabtable td:first-child{font-size:.76rem;color:#4b5860;}
+  .slabtable input{min-height:38px;padding:5px 6px;font-size:.83rem;text-align:right;}
+
+  .pill{display:inline-block;font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:20px;background:#e9dfc9;color:var(--amber-2);}
+
+  /* ---------- sub-meter cards ---------- */
+  .meter-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
+  .meter-toolbar .totalline{font-size:.78rem;color:#4b5860;font-weight:600;}
+  .meter-toolbar .totalline b{color:var(--navy);font-family:var(--mono);}
+
+  .sub-card{
+    background:#fbf9f4;border:1px solid var(--line);border-radius:12px;
+    padding:12px 13px;margin-bottom:10px;
+  }
+  .sub-card .sub-card-top{display:flex;align-items:center;gap:8px;margin-bottom:9px;}
+  .sub-card .sub-name{flex:1;font-weight:700;font-size:.92rem;border:none;background:transparent;padding:4px 2px;min-height:32px;}
+  .sub-card .sub-name:focus{outline:none;border-bottom:1.5px solid var(--amber);}
+  .sub-card .sub-amount-badge{font-family:var(--mono);font-weight:700;color:var(--navy);font-size:.92rem;white-space:nowrap;}
+  .sub-card .sub-readings{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .sub-card .sub-readings .fld label{font-size:.68rem;margin-bottom:3px;}
+  .sub-card .sub-readings input{min-height:38px;font-size:.88rem;padding:6px 8px;}
+  .sub-card .sub-units-line{margin-top:7px;font-size:.74rem;color:#83786a;}
+
+  .subtotal-bar{
+    display:flex;justify-content:space-between;align-items:center;
+    background:var(--navy);color:#f3efe6;border-radius:12px;padding:13px 16px;margin-top:2px;margin-bottom:14px;
+  }
+  .subtotal-bar .st-lbl{font-size:.72rem;color:#c9d3d2;text-transform:uppercase;letter-spacing:.04em;}
+  .subtotal-bar .st-val{font-family:var(--mono);font-size:1.15rem;font-weight:700;color:var(--amber);}
+
+  .compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+  .compare-box{background:#fbf9f4;border:1px solid var(--line);border-radius:10px;padding:12px 13px;}
+  .compare-box .amt{font-family:var(--mono);font-size:1.1rem;font-weight:700;color:var(--navy);}
+  .compare-box .lbl{font-size:.68rem;color:#83786a;font-weight:600;text-transform:uppercase;}
+  .diff-pos{color:var(--green);}
+  .diff-neg{color:var(--red);}
+
+  .footer-note{font-size:.76rem;color:#8a8072;margin-top:6px;line-height:1.6;padding-bottom:6px;}
+  .footer-note strong{color:#5c5548;}
+
+  /* ---------- sticky action bar ---------- */
+  .sticky-action{
+    position:fixed;left:0;right:0;
+    bottom:calc(var(--nav-h) + env(safe-area-inset-bottom));
+    z-index:25;display:none;
+    background:linear-gradient(to top, var(--paper) 60%, rgba(238,233,221,0));
+    padding:14px 16px 10px;
+  }
+  .sticky-action.show{display:flex;}
+  .sticky-action .inner{max-width:560px;margin:0 auto;width:100%;display:flex;gap:10px;}
+
+  /* ---------- bottom nav ---------- */
+  .bottomnav{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    max-width:560px;margin:0 auto;
+    display:flex;background:var(--paper-2);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom);
+    box-shadow:0 -4px 14px rgba(0,0,0,.06);
+  }
+  .bottomnav-btn{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    background:none;border:none;padding:9px 4px;height:var(--nav-h);cursor:pointer;color:#83786a;
+  }
+  .bottomnav-btn .bn-icon{font-size:1.25rem;line-height:1;}
+  .bottomnav-btn .bn-label{font-size:.68rem;font-weight:600;}
+  .bottomnav-btn.active{color:var(--amber-2);}
+  .bottomnav-btn:active{background:#f3efe6;}
+
+  #printArea{display:none;}
+
+  @media print{
+    body{background:#fff;}
+    .app-shell{
+      box-shadow:none !important;border-radius:0 !important;margin:0 !important;
+      max-width:none !important;overflow:visible !important;min-height:auto !important;
+    }
+    .app-shell > *:not(#printArea){display:none !important;}
+    #printArea{display:block !important;position:static !important;width:100%;padding:10px;}
+    .no-print{display:none !important;}
+  }
+  .print-header{margin-bottom:16px;border-bottom:2px solid #000;padding-bottom:10px;}
+  .print-header h1{margin:0 0 4px;font-size:1.3rem;}
+  .print-header div{font-size:.85rem;color:#333;}
+  .print-table{width:100%;border-collapse:collapse;margin-bottom:16px;}
+  .print-table th,.print-table td{border:1px solid #999;padding:6px 8px;font-size:.83rem;text-align:right;}
+  .print-table th:first-child,.print-table td:first-child{text-align:left;}
+  .print-summary{width:100%;max-width:420px;border-collapse:collapse;margin-bottom:14px;}
+  .print-summary td{padding:5px 8px;font-size:.9rem;}
+  .print-summary td:last-child{text-align:right;font-family:var(--mono);}
+  .print-summary tr.grand td{font-weight:700;font-size:1.05rem;border-top:2px solid #000;padding-top:8px;}
+  .slips-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .tenant-slip{border:1px solid #999;border-radius:6px;padding:12px 14px;page-break-inside:avoid;}
+  .slip-header{display:flex;justify-content:space-between;border-bottom:1px solid #333;padding-bottom:6px;margin-bottom:8px;font-size:.9rem;}
+  .slip-row{display:flex;justify-content:space-between;font-size:.82rem;padding:3px 0;}
+  .slip-row.grand{font-weight:700;border-top:1px solid #333;margin-top:6px;padding-top:6px;}
+  .slip-row.due{color:#900;font-weight:700;}
+
+  @media (min-width:560px){
+    .app-shell{box-shadow:0 0 0 1px var(--line), 0 20px 50px rgba(20,30,35,.12);margin-top:18px;margin-bottom:18px;border-radius:20px;overflow:hidden;min-height:auto;}
+    .bottomnav, .sticky-action{max-width:560px;}
+  }
+  /* ================= v3 additions ================= */
+  .langbtn{
+    background:rgba(255,255,255,.12);color:#f3efe6;border:1px solid rgba(255,255,255,.3);
+    border-radius:8px;padding:6px 10px;font-size:.76rem;font-weight:700;cursor:pointer;min-height:34px;white-space:nowrap;
+  }
+  .langbtn:active{background:rgba(255,255,255,.25);}
+
+  .sub-phone{
+    width:100%;min-height:38px;margin-bottom:8px;font-size:.88rem;padding:6px 8px;
+    border:1px solid var(--line);border-radius:9px;background:#fff;
+  }
+  .sub-card.has-custom-rate{border-left:4px solid var(--amber);}
+  .sub-warn{margin-top:7px;font-size:.74rem;color:var(--red);font-weight:600;line-height:1.35;}
+  .sub-units-line{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;font-size:.78rem;color:#83786a;}
+  .sub-units-line b{font-family:var(--mono);color:var(--navy);}
+  .sub-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;}
+  .sub-actions .ghost{min-height:40px;padding:0 6px;font-size:.76rem;}
+  .sub-actions .ghost.wa{border-color:#8cc5a3;color:#2c6a47;}
+
+  .suggest-box{
+    display:none;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;
+    background:#fbefd9;border:1px solid #ecd2a3;border-radius:10px;padding:10px 12px;font-size:.8rem;
+  }
+  .suggest-box .ghost{flex:0 0 auto;min-height:36px;}
+  .subtotal-bar.alt{background:var(--amber-2);margin-top:-6px;}
+  .subtotal-bar.alt .st-val{color:#fff;}
+
+  /* history */
+  .hist-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px;}
+  .hist-stat{background:#fbf9f4;border:1px solid var(--line);border-radius:10px;padding:9px 10px;}
+  .hist-stat .k{font-size:.62rem;text-transform:uppercase;letter-spacing:.04em;color:#83786a;font-weight:700;}
+  .hist-stat .v{font-family:var(--mono);font-weight:700;font-size:.88rem;color:var(--navy);margin-top:3px;word-break:break-word;}
+  .hist-stat.bad .v{color:var(--red);}
+  .hist-stat.good .v{color:var(--green);}
+  details.hist-card summary{flex-wrap:wrap;row-gap:4px;}
+  .hist-sum-title{flex:1;}
+  .hist-sum-bal{font-family:var(--mono);font-size:.82rem;color:var(--navy);margin-right:6px;}
+  .pay-row{padding:10px 0;border-top:1px solid var(--line);}
+  .pay-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .pay-name{font-weight:700;font-size:.9rem;}
+  .pay-due{font-family:var(--mono);font-size:.8rem;color:#4b5860;white-space:nowrap;}
+  .pay-inputs{display:flex;gap:8px;margin-top:7px;align-items:center;}
+  .pay-inputs input{min-height:40px;flex:1;}
+  .pay-inputs button{flex:0 0 auto;min-height:40px;}
+  .chip{display:inline-block;font-size:.62rem;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:6px;vertical-align:middle;}
+  .chip.paid{background:#dcefe3;color:#2c6a47;}
+  .chip.partly{background:#fbefd9;color:#9a5d0b;}
+  .chip.unpaid{background:#f6dcd8;color:#a1342a;}
+  .carry-tag{font-size:.68rem;color:#83786a;margin-top:2px;}
+  .hist-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+
+  .toast{
+    position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(var(--nav-h) + 96px + env(safe-area-inset-bottom));
+    background:#16232a;color:#fff;padding:10px 16px;border-radius:10px;font-size:.84rem;
+    z-index:60;max-width:90vw;opacity:0;pointer-events:none;transition:opacity .2s;text-align:center;
+  }
+  .toast.show{opacity:1;}
+
+  /* ================= PRINT DOCUMENTS (bill, sheet, report, slips) ================= */
+  @page{size:A4;margin:8mm;}
+  @media print{ *{-webkit-print-color-adjust:exact;print-color-adjust:exact;} }
+
+  .doc{color:#16232a;}
+  .doc-head{
+    display:flex;justify-content:space-between;align-items:center;gap:14px;
+    background:#1c2e37;color:#f3efe6;padding:14px 18px;border-radius:10px;border-bottom:4px solid #d98e30;
+  }
+  .doc-brand{display:flex;align-items:center;gap:12px;min-width:0;}
+  .doc-dial{width:38px;height:38px;border-radius:50%;border:3px solid #d98e30;position:relative;background:#16232a;flex:0 0 auto;}
+  .doc-dial::before{content:"";position:absolute;left:50%;top:50%;width:2px;height:13px;background:#d98e30;transform-origin:bottom center;transform:translate(-50%,-100%) rotate(35deg);}
+  .doc-dial::after{content:"";position:absolute;left:50%;top:50%;width:5px;height:5px;background:#d98e30;border-radius:50%;transform:translate(-50%,-50%);}
+  .doc-bldg{font-size:1.2rem;font-weight:800;word-break:break-word;}
+  .doc-sub{font-size:.74rem;color:#c9d3d2;margin-top:2px;}
+  .doc-title{text-align:right;flex:0 0 auto;}
+  .doc-title-main{font-size:.98rem;font-weight:800;letter-spacing:.08em;color:#d98e30;text-transform:uppercase;}
+  .doc-month{font-size:.88rem;margin-top:3px;font-weight:600;}
+  .doc-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0;}
+  .doc-meta div{background:#f5f1e6;border-radius:8px;padding:8px 10px;}
+  .doc-meta .k{font-size:.6rem;text-transform:uppercase;letter-spacing:.05em;color:#7a7264;font-weight:700;}
+  .doc-meta .v{font-size:.84rem;font-weight:700;margin-top:2px;word-break:break-word;}
+  .doc-table{width:100%;border-collapse:collapse;margin:6px 0 14px;font-size:.82rem;}
+  .doc-table th{background:#e9dfc9;color:#3b3427;text-align:right;padding:7px 9px;font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;}
+  .doc-table td{padding:6px 9px;text-align:right;border-bottom:1px solid #e4dcc9;}
+  .doc-table th:first-child,.doc-table td:first-child{text-align:left;}
+  .doc-table tbody tr:nth-child(even) td{background:#faf7ef;}
+  .doc-table tfoot td{font-weight:800;border-top:2px solid #1c2e37;border-bottom:none;background:#fff;}
+  .doc-table tr{page-break-inside:avoid;}
+  .doc-split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+  .doc-stats{display:grid;gap:8px;}
+  .doc-stat{border:1px solid #d8d0bf;border-radius:10px;padding:9px 12px;}
+  .doc-stat .k{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:#7a7264;font-weight:700;}
+  .doc-stat .v{font-size:1.05rem;font-weight:800;font-family:var(--mono);margin-top:2px;}
+  .doc-stat.hl{background:#fbefd9;border-color:#d98e30;}
+  .doc-sum{width:100%;border-collapse:collapse;font-size:.86rem;}
+  .doc-sum td{padding:6px 4px;border-bottom:1px dashed #cfc6b2;}
+  .doc-sum td:last-child{text-align:right;font-family:var(--mono);white-space:nowrap;}
+  .doc-total{display:flex;justify-content:space-between;align-items:center;background:#1c2e37;color:#fff;border-radius:10px;padding:12px 14px;margin-top:10px;}
+  .doc-total .k{font-weight:700;font-size:.9rem;}
+  .doc-total .v{color:#d98e30;font-size:1.3rem;font-weight:800;font-family:var(--mono);}
+  .doc-foot{margin-top:16px;font-size:.68rem;color:#7a7264;border-top:1px solid #d8d0bf;padding-top:8px;line-height:1.5;}
+  .st-badge{display:inline-block;font-size:.66rem;font-weight:700;padding:1px 8px;border-radius:20px;}
+  .st-badge.paid{background:#dcefe3;color:#2c6a47;}
+  .st-badge.partly{background:#fbefd9;color:#9a5d0b;}
+  .st-badge.unpaid{background:#f6dcd8;color:#a1342a;}
+
+  .slips-grid{display:grid;grid-template-columns:1fr 1fr;gap:5mm;}
+  .slips-grid.single{grid-template-columns:1fr;max-width:105mm;margin:0 auto;}
+  .slip-cell{border:1px dashed #b9b09c;padding:3mm;page-break-inside:avoid;break-inside:avoid;}
+  .tenant-slip{border:1.5px solid #1c2e37;border-radius:8px;overflow:hidden;background:#fff;font-size:.8rem;color:#16232a;}
+  .slip-top{background:#1c2e37;color:#f3efe6;padding:9px 12px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;border-bottom:3px solid #d98e30;}
+  .slip-bldg{font-weight:800;font-size:.92rem;word-break:break-word;}
+  .slip-title{font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:#d98e30;font-weight:700;margin-top:1px;}
+  .slip-month{font-size:.76rem;font-weight:700;text-align:right;white-space:nowrap;}
+  .slip-body{padding:9px 12px;}
+  .slip-lbl{display:block;font-size:.58rem;text-transform:uppercase;letter-spacing:.05em;color:#7a7264;font-weight:700;}
+  .slip-name{font-size:1.08rem;font-weight:800;word-break:break-word;}
+  .slip-reading{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:8px 0;}
+  .slip-reading div{background:#f5f1e6;border-radius:6px;padding:5px 8px;text-align:center;}
+  .slip-reading .u{background:#fbefd9;}
+  .slip-reading b{display:block;font-size:.92rem;font-family:var(--mono);}
+  .slip-calc{width:100%;border-collapse:collapse;font-size:.78rem;}
+  .slip-calc td{padding:3px 0;}
+  .slip-calc td:last-child{text-align:right;font-weight:700;font-family:var(--mono);}
+  .slip-total{display:flex;justify-content:space-between;align-items:center;background:#fbefd9;border:1.5px solid #d98e30;border-radius:6px;padding:7px 10px;margin-top:6px;font-weight:800;}
+  .slip-total b{font-size:1.1rem;color:#8a4f0b;font-family:var(--mono);}
+  .slip-due{margin-top:6px;font-size:.74rem;font-weight:700;color:#a1342a;text-align:center;}
+  .slip-note{margin-top:4px;font-size:.66rem;color:#5c5548;text-align:center;word-break:break-word;}
+  .slip-foot{display:flex;gap:14px;padding:6px 12px 4px;border-top:1px dashed #cfc6b2;}
+  .slip-sig{flex:1;font-size:.58rem;color:#7a7264;}
+  .slip-sig i{display:block;border-bottom:1px solid #8a8072;height:16px;}
+  .slip-thanks{text-align:center;font-size:.6rem;color:#7a7264;padding:2px 12px 7px;}
+
+  /* print polish: white paper, compact slips (6 per A4) */
+  @media print{
+    html,body,.app-shell{background:#fff !important;}
+    .slips-grid{gap:3mm;}
+    .slip-cell{padding:1.5mm;}
+    .slip-top{padding:5px 10px;}
+    .slip-reading{margin:4px 0;}
+    .slip-calc td{padding:2px 0;}
+    .slip-top{padding:6px 10px;}
+    .slip-bldg{font-size:.84rem;}
+    .slip-body{padding:6px 10px;}
+    .slip-name{font-size:.98rem;}
+    .slip-reading{margin:5px 0;gap:5px;}
+    .slip-reading div{padding:3px 6px;}
+    .slip-total{padding:5px 9px;margin-top:4px;}
+    .slip-foot{padding:3px 10px 2px;}
+    .slip-sig i{height:11px;}
+    .slip-thanks{padding:1px 10px 5px;}
+  }
+
+  /* ================= responsive polish ================= */
+  .grid{align-items:end;}
+  .bld-grid .span-all{grid-column:1 / -1;}
+  details.card summary .num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;flex:0 0 auto;background:var(--amber);color:#fff;font-size:.72rem;font-weight:700;}
+  .bldg-summary{font-size:.76rem;font-weight:500;color:#83786a;margin-left:4px;min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;}
+  details.card summary > span[data-i18n]{white-space:nowrap;}
+  details.card summary::after{flex:0 0 auto;}
+  .bld-grid{grid-template-columns:1.25fr 1fr;}
+  .desktop-only{display:none;}
+  .result-placeholder{display:none;}
+
+  /* tablet / small desktop: keep the phone frame but centre the fixed bars */
+  @media (min-width:560px){
+    .sticky-action{margin:0 auto;}
+    .bottomnav{margin:0 auto;}
+  }
+
+  /* ===== desktop: sidebar + two-column workspace ===== */
+  @media (min-width:960px){
+    body{background:#e6e0d1;}
+    .app-shell{
+      max-width:1240px;margin:20px auto;border-radius:20px;overflow:visible;min-height:calc(100vh - 40px);
+      display:grid;grid-template-columns:230px minmax(0,1fr);grid-template-rows:auto auto 1fr;
+      grid-template-areas:"top top" "banner banner" "nav content";
+      background:var(--paper);
+    }
+    .topbar{grid-area:top;border-radius:20px 20px 0 0;padding:14px 28px;}
+    .topbar-title{font-size:1.15rem;}
+    .offline-banner{grid-area:banner;}
+    .content{grid-area:content;padding:24px 28px 40px;max-width:none;}
+    .sticky-action{display:none !important;}
+    .desktop-only{display:flex;}
+
+    .bottomnav{
+      grid-area:nav;position:sticky;top:88px;align-self:start;left:auto;right:auto;bottom:auto;
+      width:auto;max-width:none;margin:20px 0 0 16px;flex-direction:column;gap:6px;
+      background:transparent;border:none;box-shadow:none;padding:0 0 0 0;
+    }
+    .bottomnav-btn{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;height:50px;padding:0 16px;border-radius:12px;color:#4b5860;}
+    .bottomnav-btn .bn-icon{font-size:1.2rem;}
+    .bottomnav-btn .bn-label{font-size:.92rem;}
+    .bottomnav-btn:hover{background:#f3efe6;}
+    .bottomnav-btn.active{background:var(--paper-2);color:var(--amber-2);box-shadow:0 0 0 1px var(--line);}
+    .toast{bottom:30px;}
+    .bld-grid + .btnrow .ghost{flex:0 0 auto;}
+
+    /* building card spans the top, fields in one row */
+    .bld-grid{grid-template-columns:1.4fr 1fr 1.6fr 1fr;gap:14px;}
+    .bld-grid .span-all{grid-column:auto;}
+
+    .panel.active{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;}
+    .panel.active > .card, .panel.active > details.card{margin-bottom:0;}
+
+    /* main meter: inputs left, live result right */
+    #panel-main > *{grid-column:1;}
+    #panel-main > .result, #panel-main > .result-placeholder{grid-column:2;grid-row:1 / span 5;position:sticky;top:88px;}
+    #panel-main > .footer-note{grid-column:1 / -1;}
+    #panel-main .stat-grid{grid-template-columns:repeat(3,1fr);}
+    #panel-main .stat-box{padding:11px 12px;}
+    #panel-main .stat-box .stat-val{font-size:1.1rem;}
+    #panel-main .stat-box .stat-sub{display:none;}
+    #panel-main:not(.has-result) .result-placeholder{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+      min-height:320px;border:2px dashed var(--line);border-radius:14px;color:#83786a;padding:24px;
+    }
+    .result-placeholder .ph-icon{font-size:2.4rem;opacity:.6;}
+    .result-placeholder .ph-title{font-weight:700;color:var(--navy);margin-top:8px;}
+    .result-placeholder .ph-text{font-size:.85rem;margin-top:4px;}
+
+    /* sub-meters: settings + reconcile on top, cards in a grid below */
+    #panel-sub > :nth-child(1){grid-column:1;grid-row:1;}
+    #panel-sub > .reconcile-card{grid-column:2;grid-row:1;}
+    #panel-sub > .slip-settings{grid-column:1 / -1;grid-row:2;}
+    #panel-sub > .sub-readings-card{grid-column:1 / -1;grid-row:3;}
+    #panel-sub > .footer-note{grid-column:1 / -1;grid-row:4;}
+    #subBody{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+    .sub-card{margin-bottom:0;}
+
+    /* history */
+    #panel-history > :nth-child(1){grid-column:1;grid-row:1;}
+    #panel-history > details.card{grid-column:2;grid-row:1;}
+    #panel-history > #histList{grid-column:1 / -1;grid-row:2;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+    #histList .card{margin-bottom:0;}
+  }
+  @media (min-width:1280px){
+    #subBody{grid-template-columns:repeat(3,minmax(0,1fr));}
+  }
+  @media print{ .app-shell{display:block !important;} }
+  /* Slip controls inherit the existing paper, ink and amber palette. */
+  .slip-studio{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px;align-items:start;}
+  .slip-controls,.slip-preview-pane{min-width:0;}
+  .slip-controls>.field{margin-top:16px;}
+  .slip-fields{border:0;padding:0;margin:20px 0;display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;}
+  .slip-fields legend{font-weight:700;margin-bottom:8px;}
+  .slip-fields label{display:flex;align-items:center;gap:8px;min-height:44px;margin:0;font-size:.85rem;line-height:1.35;color:var(--navy);}
+  .slip-fields input{width:18px;height:18px;flex:0 0 auto;accent-color:var(--navy);}
+  .slip-studio textarea,.message-editor textarea{width:100%;min-height:120px;padding:10px;border:1px solid #8a8072;border-radius:8px;background:white;color:#16232a;font:inherit;resize:vertical;}
+  .slip-studio code{font-size:.8rem;overflow-wrap:anywhere;}
+  .slip-studio .hint,.message-editor .hint{color:#5c5548;}
+  .slip-studio :is(input,select,button),.message-editor button{min-height:44px;}
+  .slip-studio input[type=checkbox]{min-height:18px;}
+  .slip-studio :focus-visible,.message-editor :focus-visible{outline:2px solid var(--navy);outline-offset:3px;}
+  .slip-preview-pane{position:sticky;top:90px;}
+  #slipPreview .slip-cell{padding:0;border:0;}
+  #slipPreview .tenant-slip{width:100%;padding:0;}
+  #slipSettings{scroll-margin-top:90px;}
+  #slipPageLayout{display:grid;gap:3px;padding:7px;border:1px solid #8a8072;background:#eee9dd;max-width:270px;max-height:260px;margin:12px 0 20px;}
+  #slipPageLayout span{display:flex;align-items:center;justify-content:center;border:1px solid var(--line);background:white;color:var(--navy);font-size:12px;min-width:0;min-height:0;}
+  #slipPageLayout .empty{background:transparent;border-color:transparent;}
+  .sub-actions{display:flex;flex-wrap:wrap;}
+  .sub-actions button{min-height:44px;flex:1 1 75px;}
+  .sub-actions .ghost{min-height:44px;}
+  .message-editor{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+  .message-editor label{font-weight:700;display:block;margin-bottom:8px;}
+  .message-editor[hidden]{display:none;}
+  .message-editor .btnrow{flex-wrap:wrap;}
+  .slip-photo-share{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);}
+  .slip-photo-share[hidden]{display:none;}
+  .slip-photo-share h4{margin:0 0 8px;font-size:.95rem;}
+  .slip-photo-share .photo-recipient{font-size:.85rem;overflow-wrap:anywhere;margin:0 0 8px;}
+  .slip-photo-share .hint{color:#5c5548;}
+  .slip-photo-share img{display:block;width:100%;max-height:420px;object-fit:contain;object-position:top;background:white;margin:12px 0;}
+  .slip-photo-share .btnrow{flex-wrap:wrap;}
+  .slip-photo-share button{min-height:44px;}
+  .slip-page{width:190mm;height:276mm;display:grid;gap:2mm;grid-template-columns:repeat(var(--slip-cols),minmax(0,1fr));grid-template-rows:repeat(var(--slip-rows),minmax(0,1fr));break-after:page;page-break-after:always;}
+  .slip-page:last-child{break-after:auto;page-break-after:auto;}
+  .slip-page .slip-cell{position:relative;min-width:0;min-height:0;box-sizing:border-box;border:1px dashed #b9b09c;padding:1mm;overflow:hidden;}
+  .slip-page .tenant-slip{--slip-scale:1;position:static;width:100%;padding:0;font-size:8pt;box-sizing:border-box;}
+  .slip-page .slip-top{padding:calc(4px * var(--slip-scale)) calc(7px * var(--slip-scale));gap:calc(4px * var(--slip-scale));border-bottom-width:calc(2px * var(--slip-scale));}
+  .slip-page .slip-bldg{font-size:calc(9pt * var(--slip-scale));overflow-wrap:anywhere;}
+  .slip-page .slip-title,.slip-page .slip-lbl{font-size:calc(6.5pt * var(--slip-scale));letter-spacing:0;text-transform:none;line-height:1.25;}
+  .slip-page .slip-month{font-size:calc(7pt * var(--slip-scale));white-space:normal;flex-shrink:0;max-width:40%;}
+  .slip-page .slip-body{padding:calc(4px * var(--slip-scale)) calc(7px * var(--slip-scale));}
+  .slip-page .slip-name{font-size:calc(10pt * var(--slip-scale));line-height:1.2;overflow-wrap:anywhere;}
+  .slip-page .slip-reading{margin:calc(4px * var(--slip-scale)) 0;gap:calc(3px * var(--slip-scale));}
+  .slip-page .slip-reading div{padding:calc(3px * var(--slip-scale)) calc(2px * var(--slip-scale));border-radius:calc(3px * var(--slip-scale));min-width:0;}
+  .slip-page .slip-reading b{font-size:calc(8pt * var(--slip-scale));overflow-wrap:anywhere;}
+  .slip-page .slip-calc{font-size:calc(7pt * var(--slip-scale));table-layout:fixed;}
+  .slip-page .slip-calc td{padding:calc(1px * var(--slip-scale)) 0;overflow-wrap:anywhere;}
+  .slip-page .slip-calc td:last-child{width:45%;}
+  .slip-page .slip-total{padding:calc(3px * var(--slip-scale)) calc(5px * var(--slip-scale));margin-top:calc(3px * var(--slip-scale));gap:calc(4px * var(--slip-scale));font-size:calc(8pt * var(--slip-scale));flex-wrap:wrap;}
+  .slip-page .slip-total b{font-size:calc(10pt * var(--slip-scale));overflow-wrap:anywhere;}
+  .slip-page .slip-due{font-size:calc(7pt * var(--slip-scale));margin-top:calc(3px * var(--slip-scale));}
+  .slip-page .slip-note{font-size:calc(6.5pt * var(--slip-scale));margin-top:calc(2px * var(--slip-scale));overflow-wrap:anywhere;}
+  .slip-page .slip-foot{padding:calc(3px * var(--slip-scale)) calc(7px * var(--slip-scale)) calc(2px * var(--slip-scale));gap:calc(8px * var(--slip-scale));}
+  .slip-page .slip-sig{font-size:calc(6pt * var(--slip-scale));}
+  .slip-page .slip-sig i{height:calc(9px * var(--slip-scale));}
+  .slip-page .slip-thanks{font-size:calc(6.5pt * var(--slip-scale));padding:calc(1px * var(--slip-scale)) calc(7px * var(--slip-scale)) calc(4px * var(--slip-scale));overflow-wrap:anywhere;}
+  @media(max-width:767px){.slip-studio{grid-template-columns:1fr;}.slip-preview-pane{position:static;}.slip-controls textarea{font-size:16px;}}
+  @page{size:A4 portrait;margin:10mm;}
+  @page tenant-portrait{size:A4 portrait;margin:10mm;}
+  @page tenant-landscape{size:A4 landscape;margin:10mm;}
+  @media print{
+    html,body{margin:0!important;padding:0!important;}
+    .app-shell{margin:0!important;min-height:0!important;width:auto!important;max-width:none!important;border:0!important;}
+    #printArea{padding:0!important;margin:0!important;}
+    .slip-page{gap:2mm;}
+  }
+
+  .print-workflow,.preset-save{margin-bottom:12px;}
+  .workflow-check{display:flex;gap:9px;align-items:center;min-height:44px;margin:8px 0;font-size:.85rem;line-height:1.4;color:var(--navy);}
+  .workflow-check input{width:18px;height:18px;min-height:18px!important;flex:0 0 auto;accent-color:var(--navy);}
+  .print-tenant-list{max-height:230px;overflow:auto;margin:12px 0;padding:8px;border:1px solid var(--line);border-radius:8px;background:white;}
+  .print-tenant-list label{display:flex;gap:8px;align-items:center;min-height:44px;font-size:.85rem;}
+  .print-tenant-list label input{width:18px;height:18px;min-height:18px!important;flex-shrink:0;}
+  .readability-note,.month-lock-notice,.backup-reminder{padding:12px 14px;background:#fbefd9;color:#71450b;border:1px solid #ecd2a3;border-radius:8px;font-size:.85rem;line-height:1.5;}
+  .backup-reminder{margin-bottom:16px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+  .backup-reminder button{min-height:44px;}
+  .month-lock-notice{margin-bottom:16px;}
+  .readability-note{margin-bottom:16px;}
+  .readability-note button{display:block;margin-top:8px;min-height:44px;}
+  .payment-help{font-size:.75rem;color:#5c5548;margin:8px 0 0;}
+  .pay-inputs{flex-wrap:wrap;}
+  .pay-inputs input{min-width:100px;width:100px;}
+  [aria-invalid=true]{border:2px solid #a1342a!important;}
+  .photo-caption{margin-top:12px;}
+  .photo-caption label{display:block;font-weight:700;font-size:.85rem;margin-bottom:8px;}
+  .photo-caption textarea{display:block;width:100%;min-height:100px;resize:vertical;font:inherit;padding:10px;color:var(--ink);border:1px solid #8a8072;border-radius:8px;}
+  .photo-caption button{margin-top:8px;}
+  .backup-reminder[hidden],.month-lock-notice[hidden],.readability-note[hidden],#printSelection[hidden],.photo-caption[hidden]{display:none;}
+  input:disabled,select:disabled{color:#5c5548;opacity:1;background:#e8e4da;cursor:not-allowed;}
+
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <header class="topbar">
+    <div class="dial-sm"></div>
+    <div class="topbar-title">Bill Calculator
+      <small>DPDC / BERC tariff • sub-meter billing</small>
+    </div>
+    <button id="langBtn" class="langbtn no-print" onclick="toggleLang()" aria-label="Language">বাংলা</button>
+    <button id="installBtn" class="no-print" onclick="installApp()">⬇ Install</button>
+  </header>
+
+  <div class="offline-banner" id="offlineBanner">You're offline — data already on screen still works and saves locally.</div>
+
+  <div class="content">
+
+    <details class="card" id="buildingDetailsCard" open>
+      <summary><span class="num">B</span><span data-i18n="bldgTitle">Building details</span><span class="bldg-summary" id="bldgSummary"></span></summary>
+      <div class="details-body">
+        <div class="grid bld-grid">
+          <div class="field">
+            <label for="buildingName" data-i18n="bldgName">Building name</label>
+            <input type="text" id="buildingName" maxlength="60" placeholder="e.g. Green View Residence">
+          </div>
+          <div class="field">
+            <label for="billingMonth" data-i18n="billMonth">Billing month</label>
+            <input type="month" id="billingMonth">
+          </div>
+          <div class="field span-all">
+            <label for="payNote" data-i18n="payNote">Payment note (printed on slips)</label>
+            <input type="text" id="payNote" maxlength="80" placeholder="e.g. bKash 01XXXXXXXXX or pay to caretaker">
+          </div>
+          <div class="field span-all">
+            <label for="docLang" data-i18n="docLangLbl">Bill &amp; slip language</label>
+            <select id="docLang">
+              <option value="app" data-i18n="docLangApp">Same as app</option>
+              <option value="en">English</option>
+              <option value="bn">বাংলা (Bangla)</option>
+            </select>
+          </div>
+        </div>
+        <div class="btnrow no-print">
+          <button class="ghost" onclick="clearSavedData()" data-i18n="clearBtn">Clear saved data on this device</button>
+        </div>
+      </div>
+    </details>
+
+    <!-- ===================== PANEL: MAIN METER ===================== -->
+    <div id="backupReminder" class="backup-reminder no-print" hidden></div>
+    <div class="panel active" id="panel-main">
+
+      <div class="card">
+        <h2><span class="num">1</span>Meter reading</h2>
+        <p class="hint">Enter readings, or type units directly if you already know consumption.</p>
+        <div class="grid">
+          <div class="field">
+            <label for="prevReading">Previous reading</label>
+            <input type="number" inputmode="decimal" id="prevReading" value="0" min="0" oninput="syncUnits()">
+          </div>
+          <div class="field">
+            <label for="currReading">Current reading</label>
+            <input type="number" inputmode="decimal" id="currReading" value="0" min="0" oninput="syncUnits()">
+          </div>
+        </div>
+        <div class="grid single" style="margin-top:12px;">
+          <div class="field">
+            <label for="mainUnits">Units consumed (this month)</label>
+            <input type="number" inputmode="decimal" id="mainUnits" value="0" min="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span class="num">2</span>Meter type, demand &amp; rent</h2>
+        <p class="hint">Most household meters don't carry a demand charge — leave that off unless your bill shows a sanctioned-load line.</p>
+        <div class="grid">
+          <div class="field">
+            <label for="meterType">Meter type</label>
+            <select id="meterType" onchange="onMeterTypeChange()">
+              <option value="postpaid">Postpaid</option>
+              <option value="prepaid">Prepaid (smart)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="meterPhase">Connection phase</label>
+            <select id="meterPhase" onchange="onPhaseChange()">
+              <option value="single">Single phase</option>
+              <option value="three">Three phase</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid" style="margin-top:12px;">
+          <div class="field">
+            <label for="meterRent">Meter rent (৳/month)</label>
+            <input type="number" inputmode="decimal" id="meterRent" value="10" min="0" step="0.01">
+          </div>
+          <div class="field" id="rebateField" style="display:none;">
+            <label for="prepaidRebateRate">Prepaid rebate (%)</label>
+            <input type="number" inputmode="decimal" id="prepaidRebateRate" value="0.5" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="checkline">
+          <input type="checkbox" id="applyDemand" onchange="toggleDemandFields()">
+          <label for="applyDemand" style="margin:0;">Apply demand charge</label>
+        </div>
+        <div class="grid" id="demandFields" style="margin-top:10px;display:none;">
+          <div class="field">
+            <label for="loadKw">Sanctioned load (kW)</label>
+            <input type="number" inputmode="decimal" id="loadKw" value="0" min="0" step="0.1">
+          </div>
+          <div class="field">
+            <label for="demandRate">Demand rate (৳/kW)</label>
+            <input type="number" inputmode="decimal" id="demandRate" value="42" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="checkline">
+          <input type="checkbox" id="applyVat" checked>
+          <label for="applyVat" style="margin:0;">Apply 5% VAT</label>
+        </div>
+      </div>
+
+      <div class="btnrow desktop-only no-print">
+        <button class="primary" onclick="calcMain()" data-i18n="calc">Calculate bill</button>
+      </div>
+
+      <details class="card">
+        <summary>Tariff slabs (LT-A residential) <span class="pill" style="margin-left:8px;">editable</span></summary>
+        <div class="details-body">
+          <p class="hint">
+            Pre-filled with BERC-approved residential rates effective the June 2026 billing cycle.
+            Government tariff orders change — check your latest DPDC bill and edit below if needed.
+          </p>
+          <div class="field" style="margin-bottom:10px;">
+            <label for="tariffLabel" data-i18n="tariffLbl">Tariff version / effective from</label>
+            <input type="text" id="tariffLabel" maxlength="40" value="BERC June 2026">
+          </div>
+          <table class="slabtable">
+            <thead><tr><th>Slab</th><th>Up to</th><th>Rate</th></tr></thead>
+            <tbody id="slabBody"></tbody>
+          </table>
+          <div class="checkline">
+            <input type="checkbox" id="applyLifeline" checked>
+            <label for="applyLifeline" style="margin:0;">Auto lifeline rate when total units ≤ 50</label>
+          </div>
+          <div class="btnrow">
+            <button class="ghost" onclick="saveTariffPreset()" data-i18n="savePreset">Save as my preset</button>
+            <button class="ghost" onclick="loadTariffPreset()" data-i18n="loadPreset">Load my preset</button>
+            <button class="ghost" onclick="resetTariff()" data-i18n="resetTariff">Reset to default rates</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="result-placeholder" id="mainPlaceholder">
+        <div class="ph-icon">⚡</div>
+        <div class="ph-title">Your bill appears here</div>
+        <div class="ph-text">Enter the meter reading, then press “Calculate bill”.</div>
+      </div>
+
+      <div class="result" id="mainResult" style="display:none;">
+        <h3>Summary</h3>
+        <div class="stat-grid" id="mainStatGrid"></div>
+        <h3 style="margin-top:16px;">Bill breakdown</h3>
+        <div id="mainBreakdownRows"></div>
+        <div class="btnrow no-print">
+          <button class="ghost" style="background:rgba(255,255,255,0.08);color:#f3efe6;border-color:rgba(255,255,255,0.3);" onclick="printMainBill()" data-i18n="btnPrintMain">🖨 Print bill summary</button>
+        </div>
+      </div>
+
+      <p class="footer-note">
+        <strong>Note:</strong> Uses the standard telescopic slab method (each band of units charged at its own rate).
+        Meter rent (৳10 single-phase / ৳40 three-phase) and the 0.5% prepaid rebate follow BERC's SRO-43/2024 schedule — both editable.
+        Real bills may include arrears, on-time-payment rebate, or surcharge lines not modeled here — always cross-check your official bill.
+      </p>
+    </div>
+
+    <!-- ===================== PANEL: SUB-METERS ===================== -->
+    <div class="panel" id="panel-sub">
+
+      <div class="card">
+        <div id="monthLockNotice" class="month-lock-notice" hidden></div>
+        <h2><span class="num">1</span><span data-i18n="subSettings">Fixed rate &amp; sub-meters</span></h2>
+        <p class="hint" data-i18n="subSettingsHint">Set the default rate you charge tenants, how many sub-meters, and the collection due date. You can override the rate for any single flat.</p>
+        <div class="grid">
+          <div class="field">
+            <label for="fixedRate" data-i18n="defRate">Default rate (৳/unit)</label>
+            <input type="number" inputmode="decimal" id="fixedRate" value="12" min="0" step="0.01" oninput="recalcSubTable()">
+          </div>
+          <div class="field">
+            <label for="meterCount" data-i18n="meterCount">Number of meters</label>
+            <input type="number" inputmode="numeric" id="meterCount" value="20" min="1" max="30" onchange="rebuildSubTable()">
+          </div>
+        </div>
+        <div class="suggest-box" id="rateSuggest"></div>
+        <div class="btnrow"><button type="button" class="ghost" onclick="openSlipSettings()" data-i18n="slipSettings">Slip &amp; message settings</button></div>
+        <div class="grid single" style="margin-top:12px;">
+          <div class="field">
+            <label for="tenantDueDate" data-i18n="dueDate">Bill collection due date</label>
+            <input type="date" id="tenantDueDate">
+          </div>
+        </div>
+        <div class="checkline">
+          <input type="checkbox" id="roundAmounts" onchange="recalcSubTable()">
+          <label for="roundAmounts" style="margin:0;" data-i18n="roundLbl">Round each flat's bill to the nearest ৳</label>
+        </div>
+      </div>
+
+      <details class="card slip-settings" id="slipSettings" open>
+  <summary data-i18n="slipSettings">Slip &amp; message settings</summary>
+  <div class="details-body slip-studio">
+    <div class="slip-controls">
+      <div class="grid print-workflow">
+        <div class="field"><label for="slipPreset" data-i18n="slipPreset">Slip layout preset</label><select id="slipPreset" onchange="loadSlipLayoutPreset(this.value)"><option value="" data-i18n="choosePreset">Choose a preset…</option><option value="minimal" data-i18n="presetMinimal">Minimal</option><option value="standard" data-i18n="presetStandard">Standard</option><option value="detailed" data-i18n="presetDetailed">Detailed</option></select></div>
+        <div class="field"><label for="printFilter" data-i18n="printWhich">Tenants to print</label><select id="printFilter" onchange="refreshSlipPreview()"><option value="all" data-i18n="printAll">All tenants</option><option value="unpaid" data-i18n="printUnpaid">Unpaid / partly paid</option><option value="selected" data-i18n="printSelected">Selected tenants</option></select></div>
+      </div>
+      <label class="workflow-check"><input id="skipZeroBills" type="checkbox" onchange="refreshSlipPreview()"><span data-i18n="skipZero">Exclude zero bills (including dues)</span></label>
+      <div id="printSelection" hidden><div class="btnrow"><button type="button" class="ghost" onclick="selectPrintTenants(true)" data-i18n="selectAllTenants">Select all tenants</button><button type="button" class="ghost" onclick="selectPrintTenants(false)" data-i18n="clearTenants">Clear selection</button></div><div id="printTenantList" class="print-tenant-list"></div></div>
+      <div class="grid preset-save"><div class="field"><label for="slipPresetName" data-i18n="presetName">Save this layout as</label><input id="slipPresetName" type="text" maxlength="40"></div><button type="button" class="ghost" onclick="saveSlipLayoutPreset()" data-i18n="saveLayout">Save layout</button></div>
+      <label class="workflow-check"><input id="photoIncludeMessage" type="checkbox"><span data-i18n="photoWithMessage">Include my edited message when sharing a slip photo</span></label>
+      <p class="hint" data-i18n="photoCaptionHelp">Some share apps handle the photo and text separately. The photo preview keeps the message available to copy.</p>
+
+      <div class="grid">
+        <div class="field">
+          <label for="slipsPerPage" data-i18n="slipsPerPage">Slips per A4 page</label>
+          <select id="slipsPerPage" onchange="refreshSlipPreview()">
+            <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="slipOrientation" data-i18n="pageOrientation">Page orientation</label>
+          <select id="slipOrientation" onchange="refreshSlipPreview()">
+            <option value="auto" data-i18n="orientationAuto">Automatic — best fit</option>
+            <option value="portrait" data-i18n="orientationPortrait">Portrait</option>
+            <option value="landscape" data-i18n="orientationLandscape">Landscape</option>
+          </select>
+        </div>
+        <div class="field"><label for="previewTenant" data-i18n="previewTenant">Preview tenant</label><select id="previewTenant" onchange="refreshSlipPreview()"></select></div>
+      </div>
+      <p class="hint" data-i18n="pageHint">A4 · 10 mm margins · Print at 100% with browser headers and footers off. Automatic mode chooses the orientation and grid that keep your selected information readable.</p>
+      <p class="hint" data-i18n="fieldHelp">Tick the information you want on tenant slips. Untick anything you want to hide. Your choices also apply to slip photos.</p>
+      <div class="btnrow"><button type="button" class="ghost" onclick="selectSlipFields(true)" data-i18n="showAllFields">Show all information</button><button type="button" class="ghost" onclick="selectSlipFields(false)" data-i18n="hideAllFields">Hide all information</button></div>
+      <fieldset class="slip-fields"><legend data-i18n="slipFields">Show on tenant slips</legend>
+        <label><input type="checkbox" data-slip="building" checked><span data-i18n="bldgName">Building name</span></label>
+        <label><input type="checkbox" data-slip="title" checked><span data-i18n="slipTitle">Bill title</span></label>
+        <label><input type="checkbox" data-slip="month" checked><span data-i18n="billMonth">Billing month</span></label>
+        <label><input type="checkbox" data-slip="name" checked><span data-i18n="docTenant">Tenant / Flat</span></label>
+        <label><input type="checkbox" data-slip="phone"><span data-i18n="phone">Phone (WhatsApp)</span></label>
+        <label><input type="checkbox" data-slip="previous" checked><span data-i18n="docPrev">Previous reading</span></label>
+        <label><input type="checkbox" data-slip="current" checked><span data-i18n="docCurr">Current reading</span></label>
+        <label><input type="checkbox" data-slip="units" checked><span data-i18n="docUnits">Units consumed</span></label>
+        <label><input type="checkbox" data-slip="rate" checked><span data-i18n="flatRate">Rate ৳/unit</span></label>
+        <label><input type="checkbox" data-slip="amount" checked><span data-i18n="billedMonth">Billed this month</span></label>
+        <label><input type="checkbox" data-slip="dues" checked><span data-i18n="docPrevDues">Previous dues</span></label>
+        <label><input type="checkbox" data-slip="paid" checked><span data-i18n="paidToDate">Paid to date</span></label>
+        <label><input type="checkbox" data-slip="balance" checked><span data-i18n="balanceDue">Balance due</span></label>
+        <label><input type="checkbox" data-slip="total" checked><span data-i18n="docTotal">Total payable</span></label>
+        <label><input type="checkbox" data-slip="dueDate" checked><span data-i18n="dueDate">Bill collection due date</span></label>
+        <label><input type="checkbox" data-slip="note" checked><span data-i18n="payNote">Payment note</span></label>
+        <label><input type="checkbox" data-slip="signature" checked><span data-i18n="slipSignature">Signature lines</span></label>
+        <label><input type="checkbox" data-slip="footer" checked><span data-i18n="slipFooter">Footer text</span></label>
+      </fieldset>
+      <div class="field"><label for="slipTitleText" data-i18n="customTitle">Custom bill title (optional)</label><input id="slipTitleText" type="text" maxlength="60"></div>
+      <div class="field"><label for="slipFooterText" data-i18n="customFooter">Custom footer (optional)</label><input id="slipFooterText" type="text" maxlength="120"></div>
+      <div class="field"><label for="messageTemplate" data-i18n="messageTemplate">Message template (optional)</label><textarea id="messageTemplate" rows="5" maxlength="5000" aria-describedby="templateHelp"></textarea></div>
+      <p class="hint" id="templateHelp"><span data-i18n="templateHint">Leave blank for a bill using the visible slip fields. You can edit a single tenant's message on their card. Template fields:</span><br><code>{building} {month} {name} {phone} {previous} {current} {units} {rate} {amount} {dues} {total} {paid} {balance} {dueDate} {note}</code></p>
+      <p class="hint" data-i18n="sendHint">WhatsApp and SMS open an addressed message in one click. Review and tap Send in the messaging app. SMS needs a phone or a configured messaging app.</p>
+      <div class="btnrow"><button type="button" class="primary" onclick="printTenantBills()" data-i18n="printConfigured">Print tenant slips</button><button type="button" class="ghost" onclick="resetSlipSettings()" data-i18n="resetSlip">Reset slip settings</button></div>
+    </div>
+    <div class="slip-preview-pane">
+      <h3 data-i18n="slipPreview">Slip preview</h3>
+      <p class="hint" id="slipPageSummary" aria-live="polite"></p>
+      <div id="slipPageLayout" aria-hidden="true"></div>
+      <div id="printReadability" class="readability-note" role="status" hidden></div>
+      <div id="slipPreview"></div>
+      <p class="hint" data-i18n="draftHint">Hidden meters keep their readings. Increase the meter count to restore them.</p>
+    </div>
+  </div>
+</details>
+
+
+      <div class="card sub-readings-card">
+        <h2><span class="num">2</span><span data-i18n="readings">Sub-meter readings</span></h2>
+        <p class="hint" data-i18n="readingsHint">Tap a flat name to rename it. Leave a flat's rate blank to use the default rate.</p>
+
+        <div class="meter-toolbar">
+          <span class="totalline"><span data-i18n="totalUnits">Total units</span>: <b id="subUnitsTotal">0</b></span>
+        </div>
+
+        <div id="subBody"></div>
+
+        <div class="subtotal-bar">
+          <span class="st-lbl" data-i18n="billedMonth">Billed this month</span>
+          <span class="st-val" id="subAmountTotal">৳0.00</span>
+        </div>
+        <div class="subtotal-bar alt">
+          <span class="st-lbl" data-i18n="toCollect">Total to collect (incl. previous dues)</span>
+          <span class="st-val" id="subGrandTotal">৳0.00</span>
+        </div>
+
+        <div class="btnrow">
+          <button class="primary" onclick="saveMonthAndNext()" data-i18n="saveNext">Save month &amp; start next month</button>
+        </div>
+        <div class="btnrow">
+          <button class="ghost" onclick="saveMonthOnly()" data-i18n="saveOnly">💾 Save month only</button>
+          <button class="ghost" onclick="refreshDues(true)" data-i18n="refreshDues">↻ Refresh dues from history</button>
+        </div>
+        <div class="btnrow">
+          <button class="ghost" onclick="printSubSheet()" data-i18n="btnSheet">🖨 Reading sheet</button>
+          <button class="ghost" onclick="printTenantBills()" data-i18n="btnSlips">🖨 All tenant slips</button>
+        </div>
+      </div>
+
+      <details class="card reconcile-card">
+        <summary data-i18n="reconcileTitle">Reconcile against main meter bill</summary>
+        <div class="details-body">
+          <p class="hint">Compares tenant billing against the actual DPDC bill, so you can see the common-area / line-loss gap.</p>
+          <div class="grid single">
+            <div class="field">
+              <label for="mainBillOverride" data-i18n="cmpMainLbl">Main meter total bill (৳)</label>
+              <input type="number" inputmode="decimal" id="mainBillOverride" value="0" min="0" step="0.01" oninput="recalcCompare(); updateSubTotals();">
+            </div>
+          </div>
+          <div class="btnrow">
+            <button class="ghost" onclick="pullFromMainTab()" data-i18n="pullMain">Pull total from Main Meter tab</button>
+          </div>
+          <div class="compare-grid">
+            <div class="compare-box">
+              <div class="lbl" data-i18n="cmpTenant">Tenant total</div>
+              <div class="amt" id="cmpSubTotal">৳0.00</div>
+            </div>
+            <div class="compare-box">
+              <div class="lbl" data-i18n="cmpMain">Main meter bill</div>
+              <div class="amt" id="cmpMainTotal">৳0.00</div>
+            </div>
+          </div>
+          <div class="compare-box" style="margin-top:12px;">
+            <div class="lbl" data-i18n="cmpDiff">Difference to recover / surplus</div>
+            <div class="amt" id="cmpDiff">৳0.00</div>
+            <div class="hint" style="margin-top:6px;">
+              Split evenly across <span id="cmpMeterCountLbl">20</span> meters: <strong id="cmpPerMeter">৳0.00</strong> each
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <p class="footer-note">
+        <strong>Tip:</strong> Use the suggested rate above (main bill ÷ total sub-metered units) so the surplus covers
+        common-area lighting, lift, pump and line losses.
+      </p>
+    </div>
+
+    <!-- ===================== PANEL: HISTORY ===================== -->
+    <div class="panel" id="panel-history">
+
+      <div class="card">
+        <h2><span class="num">H</span><span data-i18n="histTitle">Monthly history &amp; payments</span></h2>
+        <p class="hint" data-i18n="histHint">Saved months appear here. Mark each flat Paid, Partly paid or Unpaid; unpaid balances carry into the next month as previous dues.</p>
+        <div class="hist-stats" id="histOverall"></div>
+      </div>
+
+      <div id="histList"></div>
+
+      <details class="card">
+        <summary data-i18n="backupTitle">Backup &amp; restore</summary>
+        <div class="details-body">
+          <p class="hint" data-i18n="backupHint">Your data lives only in this phone's browser. Export a backup regularly and keep it somewhere safe (WhatsApp it to yourself, Google Drive, email).</p>
+          <div class="btnrow">
+            <button class="primary" onclick="exportBackup('download')" data-i18n="expJson">⬇ Export backup (JSON)</button>
+          </div>
+          <div class="btnrow">
+            <button class="ghost" id="shareBackupBtn" style="display:none;" onclick="exportBackup('share')" data-i18n="shareJson">📤 Share backup…</button>
+            <button class="ghost" onclick="exportCsv()" data-i18n="expCsv">⬇ Export history (CSV for Excel)</button>
+          </div>
+          <div class="btnrow">
+            <button class="ghost" onclick="document.getElementById('importFile').click()" data-i18n="impJson">⬆ Import backup</button>
+          </div>
+          <input type="file" id="importFile" accept="application/json,.json" style="display:none" onchange="importBackup(this)">
+        </div>
+      </details>
+    </div>
+
+</div><!-- /.content -->
+
+  <div class="sticky-action no-print show" id="mainStickyAction">
+    <div class="inner">
+      <button class="primary" onclick="calcMain()" data-i18n="calc">Calculate bill</button>
+    </div>
+  </div>
+
+  <nav class="bottomnav no-print">
+    <button class="bottomnav-btn active" data-tab="main" onclick="switchTab('main')">
+      <span class="bn-icon">⚡</span><span class="bn-label" data-i18n="navMain">Main Meter</span>
+    </button>
+    <button class="bottomnav-btn" data-tab="sub" onclick="switchTab('sub')">
+      <span class="bn-icon">🏢</span><span class="bn-label" data-i18n="navSub">Sub-Meters</span>
+    </button>
+    <button class="bottomnav-btn" data-tab="history" onclick="switchTab('history')">
+      <span class="bn-icon">📒</span><span class="bn-label" data-i18n="navHist">History</span>
+    </button>
+  </nav>
+
+  <div class="toast no-print" id="toast" role="status" aria-live="polite"></div>
+
+  <div id="printArea"></div>
+
+</div><!-- /.app-shell -->
+
+<script>
+const APP_DATA_KEY = 'dpdc-bill-data-v4';
+const LEGACY_KEYS = ['dpdc-bill-app-state-v2','dpdc-bill-history-v1','dpdc-bill-lang-v1','dpdc-bill-tariff-preset-v1'];
+function storageSnapshot(){
+  const raw = localStorage.getItem(APP_DATA_KEY);
+  if(raw !== null){
+    const data = JSON.parse(raw);
+    if(!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid saved data');
+    return data;
+  }
+  const data = {};
+  LEGACY_KEYS.forEach(key => { const value = localStorage.getItem(key); if(value !== null) data[key] = value; });
+  return data;
+}
+function getStored(key){ return storageSnapshot()[key] ?? null; }
+function setStored(key, value){
+  const data = storageSnapshot(); data[key] = value;
+  localStorage.setItem(APP_DATA_KEY, JSON.stringify(data));
+}
+/* ---------------- Security helper: escape any user-typed text before it
+   is ever inserted via innerHTML (print views). Prevents stored/reflected
+   XSS from a building name or tenant name containing HTML/script. ---------------- */
+function escapeHtml(str){
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+}
+function clampNum(v, min){
+  const n = parseFloat(v);
+  if(!Number.isFinite(n)) return 0;
+  return min !== undefined ? Math.max(min, n) : n;
+}
+
+/* ---------------- Tariff defaults (BERC, effective June 2026 billing cycle) ---------------- */
+const DEFAULT_SLABS = [
+  {label:"Lifeline (≤50)", upto:50,  rate:5.32, isLifeline:true},
+  {label:"Step 1 (0–75)",  upto:75,  rate:6.18},
+  {label:"Step 2 (76–200)",upto:200, rate:8.50},
+  {label:"Step 3 (201–300)",upto:300,rate:9.10},
+  {label:"Step 4 (301–400)",upto:400,rate:9.62},
+  {label:"Step 5 (401–600)",upto:600,rate:15.01},
+  {label:"Step 6 (600+)",  upto:null,rate:17.35},
+];
+
+function fmt(n){
+  return '৳' + (Math.round((n||0)*100)/100).toLocaleString('en-BD', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+/* ---------------- Tab / nav switching ---------------- */
+function switchTab(name){
+  document.querySelectorAll('.bottomnav-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  ['main','sub','history'].forEach(n=>document.getElementById('panel-'+n).classList.toggle('active', name===n));
+  document.getElementById('mainStickyAction').classList.toggle('show', name==='main');
+  if(name==='history') renderHistory();
+  window.scrollTo(0,0);
+}
+
+/* ---------------- Main meter: readings ---------------- */
+function syncUnits(){
+  const prev = clampNum(document.getElementById('prevReading').value, 0);
+  const curr = clampNum(document.getElementById('currReading').value, 0);
+  document.getElementById('mainUnits').value = Math.max(0, curr - prev);
+}
+function toggleDemandFields(){
+  document.getElementById('demandFields').style.display = document.getElementById('applyDemand').checked ? 'grid' : 'none';
+}
+function onMeterTypeChange(){
+  document.getElementById('rebateField').style.display = document.getElementById('meterType').value === 'prepaid' ? 'block' : 'none';
+}
+function onPhaseChange(){
+  document.getElementById('meterRent').value = document.getElementById('meterPhase').value === 'three' ? 40 : 10;
+}
+
+/* ---------------- Slab table ---------------- */
+function buildSlabRows(slabs){
+  const body = document.getElementById('slabBody');
+  body.innerHTML = '';
+  slabs.forEach((s, i)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(s.label)}</td>
+      <td><input type="number" inputmode="decimal" data-idx="${i}" class="slab-upto" value="${s.upto===null?'':s.upto}" ${s.upto===null?'placeholder="∞"':''} min="0"></td>
+      <td><input type="number" inputmode="decimal" data-idx="${i}" class="slab-rate" value="${s.rate}" min="0" step="0.01"></td>
+    `;
+    body.appendChild(tr);
+  });
+}
+function resetSlabs(){ buildSlabRows(JSON.parse(JSON.stringify(DEFAULT_SLABS))); }
+function readSlabsFromTable(){
+  const uptoInputs = document.querySelectorAll('.slab-upto');
+  const rateInputs = document.querySelectorAll('.slab-rate');
+  return DEFAULT_SLABS.map((s,i)=>({
+    label: s.label,
+    isLifeline: !!s.isLifeline,
+    upto: uptoInputs[i].value === '' ? null : Number(uptoInputs[i].value),
+    rate: rateInputs[i].value === '' ? NaN : Number(rateInputs[i].value)
+  }));
+}
+
+/* ---------------- Main bill calculation ---------------- */
+function validSlabs(slabs){
+  if(!Array.isArray(slabs) || !slabs.length) return false;
+  const bands = slabs.filter(s=>!s.isLifeline);
+  let previous = 0;
+  return bands.length > 0 && slabs.every(s=>Number.isFinite(s.rate) && s.rate >= 0 &&
+    (!s.isLifeline || (Number.isFinite(s.upto) && s.upto > 0))) && bands.every((s,i)=>{
+    if(i === bands.length - 1) return s.upto === null;
+    if(!Number.isFinite(s.upto) || s.upto <= previous) return false;
+    previous = s.upto; return true;
+  });
+}
+function invalidateMain(){
+  window.__lastMainTotal = undefined; window.__lastMainBill = undefined;
+  document.getElementById('mainResult').style.display = 'none';
+  document.getElementById('panel-main').classList.remove('has-result');
+}
+
+function calcEnergyCharge(units, slabs){
+  if(!Number.isFinite(units) || units < 0 || !validSlabs(slabs)) throw new Error(t('msgBadSlabs'));
+  const lifeline = slabs.find(s=>s.isLifeline);
+  const applyLifeline = document.getElementById('applyLifeline').checked;
+  if(applyLifeline && lifeline && units <= lifeline.upto){
+    return {charge: units*lifeline.rate, detail:[{label:lifeline.label, units:units, rate:lifeline.rate, amt:units*lifeline.rate}]};
+  }
+  const bands = slabs.filter(s=>!s.isLifeline);
+  let remaining = units, prevUpto = 0, charge = 0;
+  const detail = [];
+  for(const band of bands){
+    if(remaining<=0) break;
+    const bandTop = band.upto===null ? Infinity : band.upto;
+    const bandUnits = Math.min(remaining, bandTop-prevUpto);
+    if(bandUnits>0){
+      const amt = bandUnits*band.rate;
+      charge += amt;
+      detail.push({label:band.label, units:bandUnits, rate:band.rate, amt:amt});
+    }
+    remaining -= bandUnits;
+    prevUpto = bandTop;
+  }
+  return {charge, detail};
+}
+
+function calcMain(silent){
+  if(!validateMainReadings()){invalidateMain();return false;}
+  const units = clampNum(document.getElementById('mainUnits').value, 0);
+  const slabs = readSlabsFromTable();
+  if(!validSlabs(slabs)){ invalidateMain(); alert(t('msgBadSlabs')); return false; }
+  const {charge: energyCharge, detail} = calcEnergyCharge(units, slabs);
+
+  const applyDemand = document.getElementById('applyDemand').checked;
+  const loadKw = clampNum(document.getElementById('loadKw').value, 0);
+  const demandRate = clampNum(document.getElementById('demandRate').value, 0);
+  const demandCharge = applyDemand ? loadKw*demandRate : 0;
+
+  const meterRent = clampNum(document.getElementById('meterRent').value, 0);
+
+  const isPrepaid = document.getElementById('meterType').value === 'prepaid';
+  const rebateRate = clampNum(document.getElementById('prepaidRebateRate').value, 0);
+  const prepaidRebate = isPrepaid ? energyCharge*(rebateRate/100) : 0;
+
+  const applyVat = document.getElementById('applyVat').checked;
+  const vat = applyVat ? (energyCharge + demandCharge)*0.05 : 0;
+
+  const total = Math.max(0, energyCharge + demandCharge + vat + meterRent - prepaidRebate);
+
+  const baseUnitPriceAvg = units>0 ? energyCharge/units : 0;
+  const trueAvgCostPerUnit = units>0 ? total/units : 0;
+
+  document.getElementById('mainStatGrid').innerHTML = `
+    <div class="stat-box">
+      <div class="stat-lbl">Units used this month</div>
+      <div class="stat-val">${units}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-lbl">Base unit price average</div>
+      <div class="stat-val">${fmt(baseUnitPriceAvg)}</div>
+      <div class="stat-sub">Energy charge only, before VAT / demand / rent</div>
+    </div>
+    <div class="stat-box accent">
+      <div class="stat-lbl">True average cost per unit</div>
+      <div class="stat-val">${fmt(trueAvgCostPerUnit)}</div>
+      <div class="stat-sub">Total bill ÷ units — includes slabs, VAT, demand, rent${isPrepaid?', prepaid rebate':''}</div>
+    </div>
+  `;
+
+  let rows = `<div class="breakdown-row"><span class="label">Units consumed</span><span class="val">${units}</span></div>`;
+  detail.forEach(d=>{
+    rows += `<div class="breakdown-row"><span class="label">${escapeHtml(d.label)} — ${d.units} × ${fmt(d.rate)}</span><span class="val">${fmt(d.amt)}</span></div>`;
+  });
+  rows += `<div class="breakdown-row"><span class="label">Energy charge</span><span class="val">${fmt(energyCharge)}</span></div>`;
+  if(applyDemand) rows += `<div class="breakdown-row"><span class="label">Demand charge (${loadKw} kW × ${fmt(demandRate)})</span><span class="val">${fmt(demandCharge)}</span></div>`;
+  if(applyVat) rows += `<div class="breakdown-row"><span class="label">VAT (5%)</span><span class="val">${fmt(vat)}</span></div>`;
+  if(meterRent>0) rows += `<div class="breakdown-row"><span class="label">Meter rent</span><span class="val">${fmt(meterRent)}</span></div>`;
+  if(isPrepaid && prepaidRebate>0) rows += `<div class="breakdown-row"><span class="label">Prepaid rebate (${rebateRate}%)</span><span class="val">−${fmt(prepaidRebate)}</span></div>`;
+  rows += `<div class="breakdown-row total"><span class="label">Total payable</span><span class="val">${fmt(total)}</span></div>`;
+
+  document.getElementById('mainBreakdownRows').innerHTML = rows;
+  document.getElementById('mainResult').style.display = 'block';
+  document.getElementById('panel-main').classList.add('has-result');
+  window.__lastMainTotal = total;
+  window.__lastMainBill = {units, energyCharge, detail, applyDemand, loadKw, demandRate, demandCharge, meterRent, isPrepaid, rebateRate, prepaidRebate, applyVat, vat, total, baseUnitPriceAvg, trueAvgCostPerUnit};
+  const resultEl = document.getElementById('mainResult');
+  if(!silent && typeof resultEl.scrollIntoView === 'function'){
+    resultEl.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+  updateSubTotals();
+  return true;
+}
+
+/* =====================================================================
+   v3: language, sub-meter cards, history & payments, documents, backup
+   ===================================================================== */
+
+/* ---------------- i18n (English / বাংলা) ---------------- */
+const LANG_KEY = 'dpdc-bill-lang-v1';
+let LANG = 'en';
+try{ LANG = getStored(LANG_KEY) === 'bn' ? 'bn' : 'en'; }catch(e){}
+
+const I18N = {
+ en:{
+  navMain:'Main Meter', navSub:'Sub-Meters', navHist:'History', calc:'Calculate bill', docLangLbl:'Bill & slip language', docLangApp:'Same as app',
+  bldgTitle:'Building details', bldgName:'Building name', bldgEmpty:'Tap to set up', billMonth:'Billing month',
+  payNote:'Payment note (printed on slips)', clearBtn:'Clear saved data on this device',
+  tariffLbl:'Tariff version / effective from', savePreset:'Save as my preset', loadPreset:'Load my preset', resetTariff:'Reset to default rates',
+  btnPrintMain:'🖨 Print bill summary',
+  subSettings:'Fixed rate & sub-meters',
+  subSettingsHint:'Set the default rate you charge tenants, how many sub-meters, and the collection due date. You can override the rate for any single flat.',
+  defRate:'Default rate (৳/unit)', meterCount:'Number of meters', dueDate:'Bill collection due date',
+  roundLbl:"Round each flat's bill to the nearest ৳",
+  readings:'Sub-meter readings', readingsHint:"Tap a flat name to rename it. Leave a flat's rate blank to use the default rate.",
+  totalUnits:'Total units', billedMonth:'Billed this month', toCollect:'Total to collect (incl. previous dues)',
+  saveNext:'Save month & start next month', saveOnly:'💾 Save month only', refreshDues:'↻ Refresh dues from history',
+  btnSheet:'🖨 Reading sheet', btnSlips:'🖨 All tenant slips',
+  prev:'Previous', curr:'Current', flatRate:'Rate ৳/unit', dues:'Previous dues ৳', phone:'Phone (WhatsApp)',
+  unitsLbl:'Units', totalDue:'Total due', btnWa:'📲 WhatsApp', btnImg:'🖼 Image', btnSlip:'🖨 Print / PDF',
+  warnLower:'⚠ Current reading is lower than previous — check the reading or a meter reset.',
+  suggested:'Suggested rate (main bill ÷ total units)', useIt:'Use this rate',
+  reconcileTitle:'Reconcile against main meter bill', cmpMainLbl:'Main meter total bill (৳)',
+  pullMain:'Pull total from Main Meter tab', cmpTenant:'Tenant total', cmpMain:'Main meter bill', cmpDiff:'Difference to recover / surplus',
+  histTitle:'Monthly history & payments',
+  histHint:'Saved months appear here. Mark each flat Paid, Partly paid or Unpaid; unpaid balances carry into the next month as previous dues. Record payments in the newest month.',
+  histEmpty:'No months saved yet. Use "Save month" on the Sub-Meters tab.',
+  billed:'Billed', totalDueLbl:'Total due', collected:'Collected', outstanding:'Outstanding', newestMonth:'Newest month', monthsSaved:'Months saved',
+  paidLbl:'Paid ৳', paidFull:'Mark paid', allPaid:'✔ Mark all paid',
+  statusPaid:'Paid', statusPartly:'Partly paid', statusUnpaid:'Unpaid', carried:'Unpaid balance is carried forward — use "Refresh dues" on the Sub-Meters tab.',
+  delMonth:'🗑 Delete month', printReport:'🖨 Collection report',
+  backupTitle:'Backup & restore',
+  backupHint:"Your data lives only in this phone's browser. Export a backup regularly and keep it somewhere safe (WhatsApp it to yourself, Google Drive, email).",
+  expJson:'⬇ Export backup (JSON)', shareJson:'📤 Share backup…', expCsv:'⬇ Export history (CSV for Excel)', impJson:'⬆ Import backup',
+  docBill:'Electricity Bill', docSheet:'Sub-meter reading sheet', docReport:'Collection report', docMain:'Main meter bill',
+  docMonth:'Billing month', docTenant:'Tenant / Flat', docPrev:'Previous reading', docCurr:'Current reading', docUnits:'Units consumed',
+  docPrevDues:'Previous dues', docTotal:'Total payable', docPayBy:'Pay by', docReceived:'Received by', docDate:'Date',
+  docThanks:'Thank you for paying on time.', docIssued:'Issued', docTariff:'Tariff', docMeter:'Meter',
+  docSlab:'Slab', docUnitsS:'Units', docRateS:'Rate', docAmount:'Amount', docEnergy:'Energy charge', docDemand:'Demand charge',
+  docVat:'VAT (5%)', docRent:'Meter rent', docRebate:'Prepaid rebate', docUsed:'Units used this month',
+  docBaseAvg:'Base unit price average', docTrueAvg:'True average cost per unit',
+  docPrepaid:'Prepaid', docPostpaid:'Postpaid', docSingle:'Single phase', docThree:'Three phase',
+  docFlat:'Flat', docPrevS:'Previous', docCurrS:'Current', docDues:'Dues', docTotalS:'Total', docPaid:'Paid', docBalance:'Balance', docStatus:'Status',
+  docDefaultRate:'Default rate', docDueDate:'Due date', docGrand:'Grand total',
+  docDisclaimer:'Calculated with the BERC slab method. Please cross-check with your official DPDC bill.',
+  msgBadSlabs:'Enter increasing slab limits, leave only the final limit blank, and use non-negative finite rates.',
+  msgNoMonth:'Please set the Billing month (at the top of the page) before saving.',
+  msgOverwrite:'A record for this month already exists. Replace it? (Payments already marked are kept.)',
+  msgConfirmNext:'Save this month to History and start the next month? Current readings will become the new previous readings.',
+  msgSaved:'Month saved to History.', msgNextStarted:'Saved. Next month started — enter the new current readings.',
+  msgDuesUpdated:'Dues updated from {m} for {n} flats.', msgNoHistory:'No earlier saved month found to pull dues from.',
+  msgDelConfirm:'Delete this month from History? This cannot be undone.',
+  msgBadFile:'This file is not a valid backup from this app.',
+  msgImportConfirm:'Replace ALL current data on this device with the backup ({n} saved months)?',
+  msgImported:'Backup restored. Reloading…', msgStorageFail:'Could not save to this device (storage full or blocked).',
+  msgClear:'Clear ALL saved data on this device, including monthly history? Export a backup first if you may need it. This cannot be undone.',
+  msgPresetSaved:'Tariff preset saved on this device.', msgPresetNone:'No saved preset yet.', msgPresetLoaded:'Saved preset loaded.',
+  msgNoPhone:'No valid Bangladeshi mobile number saved for this flat — pick the contact in WhatsApp.',
+  msgSuggestUsed:'Default rate updated.', msgCopied:'Done.'
+ },
+ bn:{
+  navMain:'মূল মিটার', navSub:'সাব-মিটার', navHist:'ইতিহাস', calc:'বিল হিসাব করুন', docLangLbl:'বিল ও স্লিপের ভাষা', docLangApp:'অ্যাপের ভাষা অনুযায়ী',
+  bldgTitle:'বিল্ডিংয়ের তথ্য', bldgName:'বিল্ডিংয়ের নাম', bldgEmpty:'ট্যাপ করে ঠিক করুন', billMonth:'বিলের মাস',
+  payNote:'পেমেন্ট নোট (স্লিপে ছাপা হবে)', clearBtn:'এই ডিভাইসের সব সেভ করা ডেটা মুছুন',
+  tariffLbl:'ট্যারিফ সংস্করণ / কার্যকর তারিখ', savePreset:'আমার প্রিসেট হিসেবে সেভ', loadPreset:'আমার প্রিসেট লোড', resetTariff:'ডিফল্ট রেটে ফিরুন',
+  btnPrintMain:'🖨 বিল প্রিন্ট করুন',
+  subSettings:'নির্ধারিত রেট ও সাব-মিটার',
+  subSettingsHint:'ভাড়াটিয়াদের কাছ থেকে প্রতি ইউনিটে কত নেবেন (ডিফল্ট রেট), কয়টা সাব-মিটার, আর বিল আদায়ের শেষ তারিখ ঠিক করুন। যেকোনো একটি ফ্ল্যাটের জন্য আলাদা রেটও দেওয়া যায়।',
+  defRate:'ডিফল্ট রেট (৳/ইউনিট)', meterCount:'মিটারের সংখ্যা', dueDate:'বিল আদায়ের শেষ তারিখ',
+  roundLbl:'প্রতিটি ফ্ল্যাটের বিল নিকটতম টাকায় রাউন্ড করুন',
+  readings:'সাব-মিটার রিডিং', readingsHint:'ফ্ল্যাটের নামে ট্যাপ করে নাম বদলান। কোনো ফ্ল্যাটের রেট ফাঁকা রাখলে ডিফল্ট রেট ধরা হবে।',
+  totalUnits:'মোট ইউনিট', billedMonth:'এ মাসের বিল', toCollect:'মোট আদায়যোগ্য (পূর্বের বকেয়াসহ)',
+  saveNext:'মাস সেভ করে পরের মাস শুরু করুন', saveOnly:'💾 শুধু মাস সেভ করুন', refreshDues:'↻ ইতিহাস থেকে বকেয়া হালনাগাদ',
+  btnSheet:'🖨 রিডিং শিট', btnSlips:'🖨 সব ভাড়াটিয়ার স্লিপ',
+  prev:'আগের', curr:'বর্তমান', flatRate:'রেট ৳/ইউনিট', dues:'আগের বকেয়া ৳', phone:'ফোন (হোয়াটসঅ্যাপ)',
+  unitsLbl:'ইউনিট', totalDue:'মোট প্রদেয়', btnWa:'📲 হোয়াটসঅ্যাপ', btnImg:'🖼 ছবি', btnSlip:'🖨 প্রিন্ট / PDF',
+  warnLower:'⚠ বর্তমান রিডিং আগেরটির চেয়ে কম — রিডিং বা মিটার রিসেট যাচাই করুন।',
+  suggested:'প্রস্তাবিত রেট (মূল বিল ÷ মোট ইউনিট)', useIt:'এই রেট ব্যবহার করুন',
+  reconcileTitle:'মূল মিটারের বিলের সাথে মিলিয়ে দেখুন', cmpMainLbl:'মূল মিটারের মোট বিল (৳)',
+  pullMain:'মূল মিটার ট্যাব থেকে মোট নিন', cmpTenant:'ভাড়াটিয়াদের মোট', cmpMain:'মূল মিটারের বিল', cmpDiff:'আদায়যোগ্য ঘাটতি / উদ্বৃত্ত',
+  histTitle:'মাসিক ইতিহাস ও পেমেন্ট',
+  histHint:'সেভ করা মাসগুলো এখানে দেখাবে। প্রতিটি ফ্ল্যাট পরিশোধিত, আংশিক নাকি বকেয়া চিহ্নিত করুন; বকেয়া টাকা পরের মাসে পূর্বের বকেয়া হিসেবে যোগ হবে। পেমেন্ট সবচেয়ে নতুন মাসে লিখুন।',
+  histEmpty:'এখনো কোনো মাস সেভ করা হয়নি। সাব-মিটার ট্যাবে "মাস সেভ করুন" চাপুন।',
+  billed:'বিল', totalDueLbl:'মোট প্রদেয়', collected:'আদায়', outstanding:'বকেয়া', newestMonth:'সর্বশেষ মাস', monthsSaved:'সেভ করা মাস',
+  paidLbl:'পরিশোধ ৳', paidFull:'সম্পূর্ণ পরিশোধ', allPaid:'✔ সবাই পরিশোধ করেছে',
+  statusPaid:'পরিশোধিত', statusPartly:'আংশিক', statusUnpaid:'বকেয়া', carried:'বকেয়া টাকা পরের মাসে যাবে — সাব-মিটার ট্যাবে "বকেয়া হালনাগাদ" চাপুন।',
+  delMonth:'🗑 মাস মুছুন', printReport:'🖨 আদায় প্রতিবেদন',
+  backupTitle:'ব্যাকআপ ও রিস্টোর',
+  backupHint:'আপনার ডেটা শুধু এই ফোনের ব্রাউজারে থাকে। নিয়মিত ব্যাকআপ নিয়ে নিরাপদ জায়গায় রাখুন (নিজের হোয়াটসঅ্যাপে পাঠান, গুগল ড্রাইভ বা ইমেইলে)।',
+  expJson:'⬇ ব্যাকআপ নিন (JSON)', shareJson:'📤 ব্যাকআপ শেয়ার করুন…', expCsv:'⬇ ইতিহাস এক্সপোর্ট (এক্সেলের জন্য CSV)', impJson:'⬆ ব্যাকআপ ইমপোর্ট',
+  docBill:'বিদ্যুৎ বিল', docSheet:'সাব-মিটার রিডিং শিট', docReport:'আদায় প্রতিবেদন', docMain:'মূল মিটারের বিল',
+  docMonth:'বিলের মাস', docTenant:'ভাড়াটিয়া / ফ্ল্যাট', docPrev:'আগের রিডিং', docCurr:'বর্তমান রিডিং', docUnits:'ব্যবহৃত ইউনিট',
+  docPrevDues:'আগের বকেয়া', docTotal:'মোট প্রদেয়', docPayBy:'পরিশোধের শেষ তারিখ', docReceived:'গ্রহণকারীর স্বাক্ষর', docDate:'তারিখ',
+  docThanks:'সময়মতো পরিশোধের জন্য ধন্যবাদ।', docIssued:'ইস্যুর তারিখ', docTariff:'ট্যারিফ', docMeter:'মিটার',
+  docSlab:'স্ল্যাব', docUnitsS:'ইউনিট', docRateS:'রেট', docAmount:'টাকা', docEnergy:'এনার্জি চার্জ', docDemand:'ডিমান্ড চার্জ',
+  docVat:'ভ্যাট (৫%)', docRent:'মিটার ভাড়া', docRebate:'প্রিপেইড রিবেট', docUsed:'এ মাসে ব্যবহৃত ইউনিট',
+  docBaseAvg:'মূল ইউনিট দামের গড়', docTrueAvg:'প্রকৃত গড় খরচ (প্রতি ইউনিট)',
+  docPrepaid:'প্রিপেইড', docPostpaid:'পোস্টপেইড', docSingle:'সিঙ্গেল ফেজ', docThree:'থ্রি ফেজ',
+  docFlat:'ফ্ল্যাট', docPrevS:'আগের', docCurrS:'বর্তমান', docDues:'বকেয়া', docTotalS:'মোট', docPaid:'পরিশোধ', docBalance:'অবশিষ্ট', docStatus:'অবস্থা',
+  docDefaultRate:'ডিফল্ট রেট', docDueDate:'শেষ তারিখ', docGrand:'সর্বমোট',
+  docDisclaimer:'বিলটি BERC স্ল্যাব পদ্ধতিতে হিসাব করা হয়েছে। অফিসিয়াল DPDC বিলের সাথে মিলিয়ে নিন।',
+  msgBadSlabs:'স্ল্যাবের সীমা ছোট থেকে বড় ক্রমে দিন, শুধু শেষ সীমা ফাঁকা রাখুন এবং রেট শূন্য বা তার বেশি দিন।',
+  msgNoMonth:'সেভ করার আগে পাতার উপরে "বিলের মাস" ঠিক করুন।',
+  msgOverwrite:'এই মাসের রেকর্ড আগে থেকেই আছে। বদলে দেবেন? (আগে চিহ্নিত পেমেন্ট থাকবে।)',
+  msgConfirmNext:'এই মাস ইতিহাসে সেভ করে পরের মাস শুরু করবেন? বর্তমান রিডিং নতুন "আগের রিডিং" হয়ে যাবে।',
+  msgSaved:'মাসটি ইতিহাসে সেভ হয়েছে।', msgNextStarted:'সেভ হয়েছে। পরের মাস শুরু — নতুন বর্তমান রিডিং লিখুন।',
+  msgDuesUpdated:'{m} মাসের হিসাব থেকে {n}টি ফ্ল্যাটের বকেয়া হালনাগাদ হয়েছে।', msgNoHistory:'বকেয়া নেওয়ার মতো আগের কোনো সেভ করা মাস পাওয়া যায়নি।',
+  msgDelConfirm:'ইতিহাস থেকে এই মাসটি মুছে ফেলবেন? এটি ফেরানো যাবে না।',
+  msgBadFile:'ফাইলটি এই অ্যাপের বৈধ ব্যাকআপ নয়।',
+  msgImportConfirm:'এই ডিভাইসের সব বর্তমান ডেটা ব্যাকআপ ({n}টি সংরক্ষিত মাস) দিয়ে বদলে দেবেন?',
+  msgImported:'ব্যাকআপ ফিরিয়ে আনা হয়েছে। রিলোড হচ্ছে…', msgStorageFail:'এই ডিভাইসে সেভ করা যায়নি (জায়গা ভর্তি বা ব্লক)।',
+  msgClear:'মাসিক ইতিহাসসহ এই ডিভাইসের সব সেভ করা ডেটা মুছবেন? দরকার হতে পারে মনে হলে আগে ব্যাকআপ নিন। এটি ফেরানো যাবে না।',
+  msgPresetSaved:'ট্যারিফ প্রিসেট এই ডিভাইসে সেভ হয়েছে।', msgPresetNone:'এখনো কোনো প্রিসেট সেভ করা নেই।', msgPresetLoaded:'সেভ করা প্রিসেট লোড হয়েছে।',
+  msgNoPhone:'এই ফ্ল্যাটের জন্য বৈধ বাংলাদেশি মোবাইল নম্বর নেই — হোয়াটসঅ্যাপে কন্টাক্ট বেছে নিন।',
+  msgSuggestUsed:'ডিফল্ট রেট হালনাগাদ হয়েছে।', msgCopied:'হয়েছে।'
+ }
+};
+function t(k){ const d = I18N[LANG]; return (d && d[k]) || I18N.en[k] || k; }
+function esc(s){ return escapeHtml(s); }
+function bnDigits(s){ return String(s).replace(/[0-9]/g, d => '০১২৩৪৫৬৭৮৯'[+d]); }
+function dg(s){ return LANG === 'bn' ? bnDigits(s) : String(s); }
+function round2(n){ return Math.round((n||0)*100)/100; }
+function fmtD(n){ return dg(fmt(n)); }
+function numD(n){ return dg(round2(n)); }
+function nn(v){ const n = parseFloat(v); return Number.isFinite(n) ? Math.max(0, n) : 0; }
+
+function applyLang(){
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  const b = document.getElementById('langBtn');
+  if(b) b.textContent = LANG === 'bn' ? 'English' : 'বাংলা';
+}
+function toggleLang(){
+  LANG = LANG === 'bn' ? 'en' : 'bn';
+  try{ setStored(LANG_KEY, LANG); }catch(e){}
+  applyLang(); updateSubTotals(); renderHistory(); applyMonthLock(); refreshSlipPreview(); refreshBackupReminder();
+  if(typeof updateBldgSummary === 'function') updateBldgSummary();
+}
+
+let __toastTimer;
+function toast(msg){
+  const el = document.getElementById('toast'); if(!el) return;
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(__toastTimer); __toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+/* ---------------- Date / label helpers ---------------- */
+function formatMonthLabel(ym){
+  if(!/^\d{4}-\d{2}$/.test(ym || '')) return '';
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m-1, 1).toLocaleDateString(LANG === 'bn' ? 'bn-BD' : 'en-US', {month:'long', year:'numeric'});
+}
+function formatDateLabel(ds){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(ds || '')) return '';
+  return new Date(ds + 'T00:00:00').toLocaleDateString(LANG === 'bn' ? 'bn-BD' : 'en-GB', {day:'numeric', month:'long', year:'numeric'});
+}
+function bName(){ return document.getElementById('buildingName').value.trim(); }
+function monthLabel(){ return formatMonthLabel(document.getElementById('billingMonth').value); }
+function dueLabel(){ return formatDateLabel(document.getElementById('tenantDueDate').value); }
+function payNoteText(){ return document.getElementById('payNote').value.trim(); }
+function todayLabel(){ return new Date().toLocaleDateString(LANG === 'bn' ? 'bn-BD' : 'en-GB'); }
+function nextMonthId(id){
+  const [y, m] = id.split('-').map(Number);
+  return m === 12 ? `${y+1}-01` : `${y}-${String(m+1).padStart(2,'0')}`;
+}
+
+/* ---------------- Sub-meter cards ---------------- */
+let SUB_DRAFTS = [];
+function meterId(i){ return 'meter-' + (i+1); }
+function allCardsRaw(){
+  const all = SUB_DRAFTS.slice();
+  readCardsRaw().forEach((m,i)=>{ all[i] = m; });
+  SUB_DRAFTS = all;
+  return all;
+}
+
+function cardData(card, idx){
+  if(idx === undefined) idx = Array.prototype.indexOf.call(card.parentNode.children, card);
+  const locked=currentLockedRecord();
+  const saved=locked && locked.flats.find(f=>f.meterId===card.dataset.meterId);
+  if(saved)return {...saved,custom:true,totalDue:totalDueOf(saved),balance:balanceOf(saved),lower:saved.curr<saved.prev};
+  const name = card.querySelector('.sub-name').value.trim() || ('Flat ' + (idx+1));
+  const phone = card.querySelector('.sub-phone').value.trim();
+  const prev = nn(card.querySelector('.sub-prev').value);
+  const curr = nn(card.querySelector('.sub-curr').value);
+  const rateRaw = card.querySelector('.sub-rate').value.trim();
+  const defRate = nn(document.getElementById('fixedRate').value);
+  const rate = rateRaw === '' ? defRate : nn(rateRaw);
+  const units = round2(Math.max(0, curr - prev));
+  const raw = units * rate;
+  const amount = document.getElementById('roundAmounts').checked ? Math.round(raw) : round2(raw);
+  const dues = nn(card.querySelector('.sub-dues').value);
+  return {meterId: card.dataset.meterId, name, phone, prev, curr, units, rate, custom: rateRaw !== '', amount, dues,
+          totalDue: round2(amount + dues),...billPaymentFields(card.dataset.meterId,round2(amount+dues)),lower: curr < prev};
+}
+function refreshCard(card){
+  const d = cardData(card);
+  card.querySelector('.sub-units').textContent = d.units;
+  card.querySelector('.sub-amount').textContent = fmt(d.amount);
+  card.querySelector('.sub-total-due').textContent = fmt(d.totalDue);
+  card.querySelector('.sub-warn').style.display = d.lower ? 'block' : 'none';
+  card.querySelector('.sub-rate').placeholder = String(nn(document.getElementById('fixedRate').value));
+  card.classList.toggle('has-custom-rate', d.custom);
+  return d;
+}
+function readCardsRaw(){
+  return Array.prototype.map.call(document.querySelectorAll('#subBody .sub-card'), c => ({
+    meterId: c.dataset.meterId, message: c.__messageDraft ?? null,
+    name: c.querySelector('.sub-name').value, phone: c.querySelector('.sub-phone').value,
+    prev: c.querySelector('.sub-prev').value, curr: c.querySelector('.sub-curr').value,
+    rate: c.querySelector('.sub-rate').value, dues: c.querySelector('.sub-dues').value
+  }));
+}
+function applyCardsRaw(list){
+  document.querySelectorAll('#subBody .sub-card').forEach((c, i) => {
+    const m = list[i]; if(!m || typeof m !== 'object') return;
+    c.dataset.meterId = meterId(i);
+    c.__messageDraft = typeof m.message === 'string' ? m.message.slice(0,5000) : null;
+    if(m.name !== undefined) c.querySelector('.sub-name').value = String(m.name).slice(0, 40);
+    c.querySelector('.sub-phone').value = String(m.phone ?? '').slice(0, 20);
+    c.querySelector('.sub-prev').value = m.prev ?? 0;
+    c.querySelector('.sub-curr').value = m.curr ?? 0;
+    c.querySelector('.sub-rate').value = m.rate ?? '';
+    c.querySelector('.sub-dues').value = m.dues ?? 0;
+  });
+}
+function rebuildSubTable(){
+  const old = allCardsRaw();
+  let count = parseInt(document.getElementById('meterCount').value) || 1;
+  count = Math.min(30, Math.max(1, count));
+  document.getElementById('meterCount').value = count;
+  document.getElementById('cmpMeterCountLbl').textContent = count;
+
+  const body = document.getElementById('subBody');
+  body.innerHTML = '';
+  for(let i = 1; i <= count; i++){
+    const card = document.createElement('div');
+    card.className = 'sub-card';
+    card.dataset.meterId = meterId(i-1);
+    card.innerHTML = `
+      <div class="sub-card-top">
+        <input type="text" class="sub-name" maxlength="40" value="Flat ${i}" aria-label="Flat name">
+        <span class="sub-amount-badge sub-amount">৳0.00</span>
+      </div>
+      <input type="tel" inputmode="tel" class="sub-phone" maxlength="20" data-i18n-ph="phone" placeholder="Phone (WhatsApp)">
+      <div class="sub-readings">
+        <div class="fld"><label data-i18n="prev">Previous</label><input type="number" inputmode="decimal" class="sub-prev" value="0" min="0" oninput="rowChanged(this)"></div>
+        <div class="fld"><label data-i18n="curr">Current</label><input type="number" inputmode="decimal" class="sub-curr" value="0" min="0" oninput="rowChanged(this)"></div>
+      </div>
+      <div class="sub-warn" data-i18n="warnLower" style="display:none;"></div>
+      <div class="sub-readings" style="margin-top:8px;">
+        <div class="fld"><label data-i18n="flatRate">Rate ৳/unit</label><input type="number" inputmode="decimal" class="sub-rate" min="0" step="0.01" oninput="rowChanged(this)"></div>
+        <div class="fld"><label data-i18n="dues">Previous dues ৳</label><input type="number" inputmode="decimal" class="sub-dues" value="0" min="0" step="0.01" oninput="rowChanged(this)"></div>
+      </div>
+      <div class="sub-units-line">
+        <span><span data-i18n="unitsLbl">Units</span>: <b class="sub-units">0</b></span>
+        <span><span data-i18n="totalDue">Total due</span>: <b class="sub-total-due">৳0.00</b></span>
+      </div>
+      <div class="sub-actions">
+        <button type="button" class="ghost wa" onclick="shareWhatsApp(this)" data-i18n="waMessage">WhatsApp message</button>
+        <button type="button" class="ghost" onclick="sendTenantMessage(this, 'sms')" data-i18n="smsMessage">SMS message</button>
+        <button type="button" class="ghost" onclick="editTenantMessage(this)" data-i18n="editMsg">Edit message</button>
+        <button type="button" class="ghost" onclick="shareSlipImage(this)" data-i18n="photoBill">Share slip photo</button>
+        <button type="button" class="ghost" onclick="printSingleSlip(this)" data-i18n="btnSlip">🖨 Print / PDF</button>
+      </div>
+    `;
+    body.appendChild(card);
+  }
+  applyCardsRaw(old);
+  allCardsRaw();
+  applyLang();
+  recalcSubTable();
+}
+function rowChanged(el){
+  refreshCard(el.closest('.sub-card'));
+  updateSubTotals();
+}
+function recalcSubTable(){
+  document.querySelectorAll('#subBody .sub-card').forEach(refreshCard);
+  updateSubTotals();
+}
+function updateSubTotals(){
+  let totalUnits = 0, totalAmount = 0, totalDue = 0;
+  document.querySelectorAll('#subBody .sub-card').forEach(card => {
+    const d = cardData(card);
+    totalUnits += d.units; totalAmount += d.amount; totalDue += d.totalDue;
+  });
+  window.__subUsageTotal = round2(totalAmount);
+  document.getElementById('subUnitsTotal').textContent = round2(totalUnits);
+  document.getElementById('subAmountTotal').textContent = fmt(totalAmount);
+  document.getElementById('subGrandTotal').textContent = fmt(totalDue);
+  recalcCompare();
+  updateSuggest(totalUnits);
+}
+
+/* ---------------- Suggested rate & reconciliation ---------------- */
+function mainBillForCompare(){
+  return nn(document.getElementById('mainBillOverride').value);
+}
+function updateSuggest(totalUnits){
+  const box = document.getElementById('rateSuggest');
+  const main = mainBillForCompare();
+  if(!main || !totalUnits){ box.style.display = 'none'; return; }
+  const s = Math.ceil(main / totalUnits * 100) / 100;
+  window.__suggestedRate = s;
+  box.style.display = 'flex';
+  box.innerHTML = `<span>${esc(t('suggested'))}: <b>${fmt(s)}</b></span><button type="button" class="ghost" onclick="useSuggestedRate()">${esc(t('useIt'))}</button>`;
+}
+function useSuggestedRate(){
+  if(!window.__suggestedRate) return;
+  document.getElementById('fixedRate').value = window.__suggestedRate;
+  recalcSubTable();
+  saveState();
+  toast(t('msgSuggestUsed'));
+}
+function pullFromMainTab(){
+  if(!calcMain(true)) return;
+  document.getElementById('mainBillOverride').value = Math.round((window.__lastMainTotal || 0) * 100) / 100;
+  updateSubTotals();
+}
+function recalcCompare(){
+  const subTotal = window.__subUsageTotal || 0;
+  const mainTotal = mainBillForCompare();
+  const diff = mainTotal - subTotal;
+  const count = parseInt(document.getElementById('meterCount').value) || 1;
+  document.getElementById('cmpSubTotal').textContent = fmt(subTotal);
+  document.getElementById('cmpMainTotal').textContent = fmt(mainTotal);
+  const diffEl = document.getElementById('cmpDiff');
+  diffEl.textContent = fmt(diff);
+  diffEl.className = 'amt ' + (diff >= 0 ? 'diff-pos' : 'diff-neg');
+  document.getElementById('cmpPerMeter').textContent = fmt(diff / count);
+}
+
+/* ---------------- Tariff presets ---------------- */
+const PRESET_KEY = 'dpdc-bill-tariff-preset-v1';
+function resetTariff(){
+  resetSlabs(); invalidateMain();
+  document.getElementById('tariffLabel').value = 'BERC June 2026';
+  saveState();
+}
+function saveTariffPreset(){
+  const current = readSlabsFromTable();
+  if(!validSlabs(current)){ alert(t('msgBadSlabs')); return; }
+  const slabs = current.map(s => ({upto: s.upto, rate: s.rate}));
+  try{
+    setStored(PRESET_KEY, JSON.stringify({
+      label: document.getElementById('tariffLabel').value.slice(0, 40),
+      applyLifeline: document.getElementById('applyLifeline').checked, slabs
+    }));
+    toast(t('msgPresetSaved'));
+  }catch(e){ toast(t('msgStorageFail')); }
+}
+function loadTariffPreset(){
+  let p;
+  try{ p = JSON.parse(getStored(PRESET_KEY) || 'null'); }catch(e){ p = null; }
+  if(!p || !Array.isArray(p.slabs) || p.slabs.length !== DEFAULT_SLABS.length){ toast(t('msgPresetNone')); return; }
+  const slabs = DEFAULT_SLABS.map((d, i) => ({...d,
+    upto: (p.slabs[i].upto === null || p.slabs[i].upto === '') ? null : nn(p.slabs[i].upto),
+    rate: nn(p.slabs[i].rate)}));
+  if(!validSlabs(slabs)){ alert(t('msgBadSlabs')); return; }
+  buildSlabRows(slabs); invalidateMain();
+  document.getElementById('tariffLabel').value = String(p.label || '').slice(0, 40);
+  document.getElementById('applyLifeline').checked = p.applyLifeline !== false;
+  saveState();
+  toast(t('msgPresetLoaded'));
+}
+
+/* ---------------- History & payments ---------------- */
+const HIST_KEY = 'dpdc-bill-history-v1';
+let HISTORY = [];
+const HIST_OPEN = new Set();
+
+function totalDueOf(f){ return round2((f.amount || 0) + (f.dues || 0)); }
+function balanceOf(f){ return Math.max(0, round2(totalDueOf(f) - (f.paid || 0))); }
+function statusOf(f){
+  const due = totalDueOf(f), paid = f.paid || 0;
+  if(due <= 0.004 || paid >= due - 0.004) return 'paid';
+  return paid > 0 ? 'partly' : 'unpaid';
+}
+function sanitizeHistory(arr){
+  if(!Array.isArray(arr)) return [];
+  const out = [];
+  arr.slice(0, 240).forEach(r => {
+    if(!r || typeof r !== 'object' || !/^\d{4}-\d{2}$/.test(String(r.id || ''))) return;
+    const flats = (Array.isArray(r.flats) ? r.flats.slice(0, 60) : []).map((f, fi) => {
+      f = (f && typeof f === 'object') ? f : {};
+      const amount = nn(f.amount), dues = nn(f.dues), due = round2(amount + dues);
+      return {meterId: meterId(fi), name: String(f.name ?? '').slice(0, 40), phone: String(f.phone ?? '').slice(0, 20),
+        prev: nn(f.prev), curr: nn(f.curr), units: nn(f.units), rate: nn(f.rate),
+        amount, dues, paid: Math.min(nn(f.paid), due),payments:safePayments(f.payments,Math.min(nn(f.paid),due))};
+    });
+    out.push({id: r.id, building: String(r.building ?? '').slice(0, 60), defaultRate: nn(r.defaultRate),
+      dueDate: /^\d{4}-\d{2}-\d{2}$/.test(String(r.dueDate || '')) ? r.dueDate : '',
+      locked:r.locked===true,roundAmounts:r.roundAmounts===true,
+      payNote: String(r.payNote ?? '').slice(0, 80), savedAt: String(r.savedAt ?? '').slice(0, 30), flats});
+  });
+  const seen = new Set();
+  const uniq = out.filter(r => !seen.has(r.id) && seen.add(r.id));
+  uniq.sort((a, b) => a.id < b.id ? 1 : -1);
+  return uniq;
+}
+function loadHistory(){
+  try{ const raw = getStored(HIST_KEY); HISTORY = raw ? sanitizeHistory(JSON.parse(raw)) : []; }
+  catch(e){ HISTORY = []; }
+}
+function saveHistory(){
+  try{setStored(HIST_KEY,JSON.stringify(HISTORY));refreshBackupReminder();return true;}
+  catch(e){toast(t('msgStorageFail'));return false;}
+}
+
+function snapshotCurrent(){
+  if(!validateCards())return null;
+  const id = document.getElementById('billingMonth').value;
+  if(!/^\d{4}-\d{2}$/.test(id)){ alert(t('msgNoMonth')); return null; }
+  const flats = Array.prototype.map.call(document.querySelectorAll('#subBody .sub-card'), (c, i) => {
+    const d = cardData(c, i);
+    return {meterId: d.meterId, name: d.name, phone: d.phone, prev: d.prev, curr: d.curr, units: d.units, rate: d.rate,
+            amount: d.amount, dues: d.dues, paid: 0};
+  });
+  return {id, building: bName(), defaultRate: nn(document.getElementById('fixedRate').value),
+    dueDate: document.getElementById('tenantDueDate').value, payNote: payNoteText(),
+    roundAmounts:document.getElementById('roundAmounts').checked,locked:false,
+    savedAt: new Date().toISOString(), flats};
+}
+function saveMonthRecord(){
+  if(currentLockedRecord()){alert(t('lockedError'));return null;}
+  const rec = snapshotCurrent(); if(!rec) return null;
+  const before = HISTORY.slice();
+  const at = HISTORY.findIndex(r => r.id === rec.id);
+  if(at >= 0){
+    if(!confirm(t('msgOverwrite'))) return null;
+    const old = HISTORY[at];
+    rec.flats.forEach(f => {
+      const o = old.flats.find(x => x.meterId === f.meterId);
+      if(o){
+        f.paid=o.paid||0;f.payments=safePayments(o.payments,f.paid);
+        recordPaid(f,Math.min(f.paid,totalDueOf(f)));
+      }
+    });
+    HISTORY[at] = rec;
+  } else {
+    HISTORY.push(rec);
+  }
+  HISTORY.sort((a, b) => a.id < b.id ? 1 : -1);
+  if(!saveHistory()){ HISTORY = before; return null; }
+  renderHistory();
+  return rec;
+}
+function saveMonthOnly(){
+  if(saveMonthRecord()) toast(t('msgSaved'));
+}
+function saveMonthAndNext(){
+  const locked=currentLockedRecord();
+  if(locked){if(confirm(t('msgConfirmNext'))){rolloverMonth(locked);toast(t('msgNextStarted'));}return;}
+  if(!/^\d{4}-\d{2}$/.test(document.getElementById('billingMonth').value)){ alert(t('msgNoMonth')); return; }
+  if(!confirm(t('msgConfirmNext'))) return;
+  const rec = saveMonthRecord(); if(!rec) return;
+  rolloverMonth(rec);
+  toast(t('msgNextStarted'));
+}
+function rolloverMonth(rec){
+  LAST_LOCK_APPLIED = null;
+  const drafts = allCardsRaw();
+  drafts.forEach((m,i)=>{
+    m.prev = m.curr; m.message = null;
+    if(i >= rec.flats.length) m.dues = 0;
+  });
+  SUB_DRAFTS = drafts;
+  document.querySelectorAll('#subBody .sub-card').forEach((c, i) => {
+    c.__messageDraft = null;
+    const editor = c.querySelector('.message-editor'); if(editor) editor.remove();
+    c.querySelector('.sub-prev').value = c.querySelector('.sub-curr').value;
+    const f = rec.flats[i];
+    c.querySelector('.sub-dues').value = f ? balanceOf(f) : 0;
+  });
+  document.getElementById('billingMonth').value = nextMonthId(rec.id);
+  document.getElementById('tenantDueDate').value = '';
+  document.getElementById('mainBillOverride').value = 0;
+  document.getElementById('prevReading').value = document.getElementById('currReading').value;
+  document.getElementById('mainUnits').value = 0;
+  document.getElementById('mainResult').style.display = 'none';
+  document.getElementById('panel-main').classList.remove('has-result');
+  window.__lastMainTotal = undefined; window.__lastMainBill = undefined;
+  recalcSubTable();
+  applyMonthLock();
+  saveState();
+}
+function refreshDues(manual){
+  if(currentLockedRecord()){alert(t('lockedError'));return;}
+  const cur = document.getElementById('billingMonth').value;
+  const src = HISTORY.find(r => !/^\d{4}-\d{2}$/.test(cur) || r.id < cur);
+  if(!src){ if(manual) toast(t('msgNoHistory')); return; }
+  const cards = document.querySelectorAll('#subBody .sub-card');
+  let n = 0;
+  cards.forEach((c, i) => {
+    const f = src.flats.find(x => x.meterId === c.dataset.meterId);
+    if(f){ c.querySelector('.sub-dues').value = balanceOf(f); n++; }
+  });
+  recalcSubTable();
+  saveState();
+  if(manual) toast(t('msgDuesUpdated').replace('{m}', formatMonthLabel(src.id)).replace('{n}', dg(n)));
+}
+
+function histTotals(rec){
+  let billed = 0, due = 0, paid = 0, bal = 0;
+  rec.flats.forEach(f => { billed += f.amount; due += totalDueOf(f); paid += (f.paid || 0); bal += balanceOf(f); });
+  return {billed: round2(billed), due: round2(due), paid: round2(paid), bal: round2(bal)};
+}
+function renderHistory(){
+  const list = document.getElementById('histList');
+  const overall = document.getElementById('histOverall');
+  if(!list || !overall) return;
+  list.innerHTML = '';
+  if(!HISTORY.length){
+    overall.innerHTML = '';
+    list.innerHTML = `<div class="card"><p class="hint" style="margin:0;">${esc(t('histEmpty'))}</p></div>`;
+    return;
+  }
+  const newest = histTotals(HISTORY[0]);
+  overall.innerHTML = `
+    <div class="hist-stat"><div class="k">${esc(t('monthsSaved'))}</div><div class="v">${dg(HISTORY.length)}</div></div>
+    <div class="hist-stat good"><div class="k">${esc(t('collected'))} (${esc(formatMonthLabel(HISTORY[0].id))})</div><div class="v">${fmtD(newest.paid)}</div></div>
+    <div class="hist-stat ${newest.bal > 0 ? 'bad' : 'good'}"><div class="k">${esc(t('outstanding'))}</div><div class="v">${fmtD(newest.bal)}</div></div>`;
+
+  HISTORY.forEach((rec, ri) => {
+    const tot = histTotals(rec);
+    const det = document.createElement('details');
+    det.className = 'card hist-card';
+    det.dataset.id = rec.id;
+    if(HIST_OPEN.has(rec.id) || (ri === 0 && !HIST_OPEN.size)) det.open = true;
+    let rows = '';
+    rec.flats.forEach((f, fi) => {
+      const st = statusOf(f);
+      const stLabel = st === 'paid' ? t('statusPaid') : st === 'partly' ? t('statusPartly') : t('statusUnpaid');
+      rows += `
+        <div class="pay-row">
+          <div class="pay-top">
+            <div class="pay-name">${esc(f.name)}<span class="chip ${st}">${esc(stLabel)}</span></div>
+            <div class="pay-due">${fmtD(totalDueOf(f))}</div>
+          </div>
+          <div class="pay-inputs">
+            <input type="number" inputmode="decimal" class="pay-input" min="0" step="0.01" value="${f.paid || 0}"
+                   data-id="${esc(rec.id)}" data-fi="${fi}" aria-label="${esc(t('paidLbl'))}" ${rec.locked?'disabled':''}>
+            <button type="button" class="ghost" data-act="full" data-id="${esc(rec.id)}" data-fi="${fi}" ${rec.locked?'disabled':''}>${esc(t('paidFull'))}</button>
+            <button type="button" class="ghost" data-act="receipt" data-id="${esc(rec.id)}" data-fi="${fi}" ${!safePayments(f.payments,f.paid).length?'disabled':''}>${esc(t('receipt'))}</button>
+          </div>
+          <p class="hint payment-help">${esc(t('paidHelp'))}</p>
+        </div>`;
+    });
+    det.innerHTML = `
+      <summary>
+        <span class="hist-sum-title">${esc(formatMonthLabel(rec.id))}${rec.locked?' · '+esc(t('locked')):''}</span>
+        <span class="hist-sum-bal">${fmtD(tot.bal)}</span>
+        <span class="chip ${tot.bal <= 0.004 ? 'paid' : tot.paid > 0 ? 'partly' : 'unpaid'}">${esc(tot.bal <= 0.004 ? t('statusPaid') : t('outstanding'))}</span>
+      </summary>
+      <div class="details-body">
+        <div class="hist-stats">
+          <div class="hist-stat"><div class="k">${esc(t('billed'))}</div><div class="v">${fmtD(tot.billed)}</div></div>
+          <div class="hist-stat"><div class="k">${esc(t('totalDueLbl'))}</div><div class="v">${fmtD(tot.due)}</div></div>
+          <div class="hist-stat good"><div class="k">${esc(t('collected'))}</div><div class="v">${fmtD(tot.paid)}</div></div>
+        </div>
+        ${ri > 0 && tot.bal > 0.004 ? `<div class="carry-tag" style="margin-top:8px;">${esc(t('carried'))}</div>` : ''}
+        ${rows}
+        <div class="hist-actions"><button type="button" class="ghost" data-act="lock" data-id="${esc(rec.id)}">${esc(t(rec.locked?'unlockMonth':'lockMonth'))}</button>
+          <button type="button" class="ghost" data-act="allpaid" data-id="${esc(rec.id)}" ${rec.locked?'disabled':''}>${esc(t('allPaid'))}</button>
+          <button type="button" class="ghost" data-act="report" data-id="${esc(rec.id)}">${esc(t('printReport'))}</button>
+          <button type="button" class="ghost" data-act="del" data-id="${esc(rec.id)}" ${rec.locked?'disabled':''} style="color:var(--red);">${esc(t('delMonth'))}</button>
+        </div>
+      </div>`;
+    list.appendChild(det);
+  });
+}
+function histRec(id){ return HISTORY.find(r => r.id === id); }
+document.getElementById('histList').addEventListener('toggle', e => {
+  const d = e.target; if(!d || !d.dataset || !d.dataset.id) return;
+  if(d.open) HIST_OPEN.add(d.dataset.id); else HIST_OPEN.delete(d.dataset.id);
+}, true);
+document.getElementById('histList').addEventListener('change',handleHistoryPayment);
+document.getElementById('histList').addEventListener('click',handleHistoryAction);
+
+/* ---------------- Documents (print) ---------------- */
+function printDoc(html){
+  document.getElementById('printArea').innerHTML = html;
+  fitPrintedSlips();
+  window.print();
+}
+function docHead(title, sub, month){
+  return `<div class="doc-head">
+    <div class="doc-brand"><div class="doc-dial"></div>
+      <div><div class="doc-bldg">${esc(bName() || t('docBill'))}</div><div class="doc-sub">${esc(sub)}</div></div></div>
+    <div class="doc-title"><div class="doc-title-main">${esc(title)}</div>${month ? `<div class="doc-month">${esc(month)}</div>` : ''}</div>
+  </div>`;
+}
+function slabLabel(l){
+  return LANG === 'bn' ? dg(String(l).replace('Lifeline', 'লাইফলাইন').replace('Step', 'ধাপ')) : l;
+}
+function printMainBill(){
+  if(!calcMain(true)) return;
+  const b = window.__lastMainBill; if(!b) return;
+  const phase = document.getElementById('meterPhase').value === 'three' ? t('docThree') : t('docSingle');
+  const meter = (b.isPrepaid ? t('docPrepaid') : t('docPostpaid')) + ' · ' + phase;
+  const tariff = document.getElementById('tariffLabel').value.trim() || 'BERC';
+  const rows = b.detail.map(d =>
+    `<tr><td>${esc(slabLabel(d.label))}</td><td>${numD(d.units)}</td><td>${fmtD(d.rate)}</td><td>${fmtD(d.amt)}</td></tr>`).join('');
+  let sum = `<tr><td>${esc(t('docEnergy'))}</td><td>${fmtD(b.energyCharge)}</td></tr>`;
+  if(b.applyDemand) sum += `<tr><td>${esc(t('docDemand'))} (${numD(b.loadKw)} kW × ${fmtD(b.demandRate)})</td><td>${fmtD(b.demandCharge)}</td></tr>`;
+  if(b.applyVat) sum += `<tr><td>${esc(t('docVat'))}</td><td>${fmtD(b.vat)}</td></tr>`;
+  if(b.meterRent > 0) sum += `<tr><td>${esc(t('docRent'))}</td><td>${fmtD(b.meterRent)}</td></tr>`;
+  if(b.isPrepaid && b.prepaidRebate > 0) sum += `<tr><td>${esc(t('docRebate'))} (${dg(b.rebateRate)}%)</td><td>−${fmtD(b.prepaidRebate)}</td></tr>`;
+  printDoc(`<div class="doc">
+    ${docHead(t('docBill'), t('docMain') + ' · DPDC / BERC', monthLabel())}
+    <div class="doc-meta">
+      <div><div class="k">${esc(t('docMonth'))}</div><div class="v">${esc(monthLabel() || '—')}</div></div>
+      <div><div class="k">${esc(t('docIssued'))}</div><div class="v">${esc(todayLabel())}</div></div>
+      <div><div class="k">${esc(t('docMeter'))}</div><div class="v">${esc(meter)}</div></div>
+      <div><div class="k">${esc(t('docTariff'))}</div><div class="v">${esc(tariff)}</div></div>
+    </div>
+    <table class="doc-table">
+      <thead><tr><th>${esc(t('docSlab'))}</th><th>${esc(t('docUnitsS'))}</th><th>${esc(t('docRateS'))}</th><th>${esc(t('docAmount'))}</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="doc-split">
+      <div class="doc-stats">
+        <div class="doc-stat"><div class="k">${esc(t('docUsed'))}</div><div class="v">${numD(b.units)}</div></div>
+        <div class="doc-stat"><div class="k">${esc(t('docBaseAvg'))}</div><div class="v">${fmtD(b.baseUnitPriceAvg)}</div></div>
+        <div class="doc-stat hl"><div class="k">${esc(t('docTrueAvg'))}</div><div class="v">${fmtD(b.trueAvgCostPerUnit)}</div></div>
+      </div>
+      <div>
+        <table class="doc-sum">${sum}</table>
+        <div class="doc-total"><span class="k">${esc(t('docTotal'))}</span><span class="v">${fmtD(b.total)}</span></div>
+      </div>
+    </div>
+    <div class="doc-foot">${esc(t('docDisclaimer'))}</div>
+  </div>`);
+}
+function printSubSheet(){
+  if(!validateCards())return;
+  recalcSubTable();
+  let rows = '', tu = 0, ta = 0, td = 0, tt = 0;
+  document.querySelectorAll('#subBody .sub-card').forEach((c, i) => {
+    const d = cardData(c, i);
+    tu += d.units; ta += d.amount; td += d.dues; tt += d.totalDue;
+    rows += `<tr><td>${esc(d.name)}</td><td>${dg(d.prev)}</td><td>${dg(d.curr)}</td><td>${numD(d.units)}</td>
+      <td>${fmtD(d.rate)}${d.custom ? ' *' : ''}</td><td>${fmtD(d.amount)}</td><td>${fmtD(d.dues)}</td><td>${fmtD(d.totalDue)}</td></tr>`;
+  });
+  const due = dueLabel();
+  printDoc(`<div class="doc">
+    ${docHead(t('docSheet'), `${t('docDefaultRate')}: ${fmt(nn(document.getElementById('fixedRate').value))}`.replace(/[0-9]/g, m => dg(m)), monthLabel())}
+    <div class="doc-meta">
+      <div><div class="k">${esc(t('docMonth'))}</div><div class="v">${esc(monthLabel() || '—')}</div></div>
+      <div><div class="k">${esc(t('docDueDate'))}</div><div class="v">${esc(due || '—')}</div></div>
+      <div><div class="k">${esc(t('docIssued'))}</div><div class="v">${esc(todayLabel())}</div></div>
+      <div><div class="k">${esc(t('docGrand'))}</div><div class="v">${fmtD(tt)}</div></div>
+    </div>
+    <table class="doc-table">
+      <thead><tr><th>${esc(t('docFlat'))}</th><th>${esc(t('docPrevS'))}</th><th>${esc(t('docCurrS'))}</th><th>${esc(t('docUnitsS'))}</th>
+        <th>${esc(t('docRateS'))}</th><th>${esc(t('docAmount'))}</th><th>${esc(t('docDues'))}</th><th>${esc(t('docTotalS'))}</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td>${esc(t('docTotalS'))}</td><td></td><td></td><td>${numD(tu)}</td><td></td><td>${fmtD(ta)}</td><td>${fmtD(td)}</td><td>${fmtD(tt)}</td></tr></tfoot>
+    </table>
+    <div class="doc-foot">* ${esc(t('flatRate'))}</div>
+  </div>`);
+}
+function printCollectionReport(id){
+  const rec = histRec(id); if(!rec) return;
+  const tot = histTotals(rec);
+  let rows = '';
+  rec.flats.forEach(f => {
+    const st = statusOf(f);
+    const lbl = st === 'paid' ? t('statusPaid') : st === 'partly' ? t('statusPartly') : t('statusUnpaid');
+    rows += `<tr><td>${esc(f.name)}</td><td>${fmtD(totalDueOf(f))}</td><td>${fmtD(f.paid || 0)}</td><td>${fmtD(balanceOf(f))}</td>
+      <td><span class="st-badge ${st}">${esc(lbl)}</span></td></tr>`;
+  });
+  printDoc(`<div class="doc">
+    ${docHead(t('docReport'), rec.building || '', formatMonthLabel(rec.id))}
+    <div class="doc-meta">
+      <div><div class="k">${esc(t('billed'))}</div><div class="v">${fmtD(tot.billed)}</div></div>
+      <div><div class="k">${esc(t('totalDueLbl'))}</div><div class="v">${fmtD(tot.due)}</div></div>
+      <div><div class="k">${esc(t('collected'))}</div><div class="v">${fmtD(tot.paid)}</div></div>
+      <div><div class="k">${esc(t('outstanding'))}</div><div class="v">${fmtD(tot.bal)}</div></div>
+    </div>
+    <table class="doc-table">
+      <thead><tr><th>${esc(t('docFlat'))}</th><th>${esc(t('totalDueLbl'))}</th><th>${esc(t('docPaid'))}</th><th>${esc(t('docBalance'))}</th><th>${esc(t('docStatus'))}</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="doc-foot">${esc(t('docIssued'))}: ${esc(todayLabel())}</div>
+  </div>`);
+}
+
+/* ---------------- Tenant slips ---------------- */
+function slipHtml(d){
+  const s = readSlipSettings(), f = s.fields;
+  const due = dueLabel(), note = payNoteText();
+  const readings = [
+    f.previous ? `<div><span class="slip-lbl">${esc(t('docPrev'))}</span><b>${dg(d.prev)}</b></div>` : '',
+    f.current ? `<div><span class="slip-lbl">${esc(t('docCurr'))}</span><b>${dg(d.curr)}</b></div>` : '',
+    f.units ? `<div class="u"><span class="slip-lbl">${esc(t('docUnits'))}</span><b>${numD(d.units)}</b></div>` : ''
+  ].filter(Boolean);
+  return `<div class="slip-cell"><div class="tenant-slip">
+    ${f.building || f.title || f.month ? `<div class="slip-top"><div>
+      ${f.building ? `<div class="slip-bldg">${esc(bName() || t('docBill'))}</div>` : ''}
+      ${f.title ? `<div class="slip-title">${esc(s.title || t('docBill'))}</div>` : ''}
+    </div>${f.month ? `<div class="slip-month">${esc(monthLabel())}</div>` : ''}</div>` : ''}
+    <div class="slip-body">
+      ${f.name ? `<span class="slip-lbl">${esc(t('docTenant'))}</span><div class="slip-name">${esc(d.name)}</div>` : ''}
+      ${f.phone && d.phone ? `<div class="slip-note">${esc(d.phone)}</div>` : ''}
+      ${readings.length ? `<div class="slip-reading" style="grid-template-columns:repeat(${readings.length},minmax(0,1fr));">${readings.join('')}</div>` : ''}
+      ${f.rate || f.amount || (f.dues && d.dues > 0) ? `<table class="slip-calc">
+        ${f.rate ? `<tr><td>${esc(t('flatRate'))}</td><td>${fmtD(d.rate)}</td></tr>` : ''}
+        ${f.amount ? `<tr><td>${esc(t('billedMonth'))}</td><td>${fmtD(d.amount)}</td></tr>` : ''}
+        ${f.dues && d.dues > 0 ? `<tr><td>${esc(t('docPrevDues'))}</td><td>${fmtD(d.dues)}</td></tr>` : ''}
+      </table>` : ''}
+      ${f.total ? `<div class="slip-total"><span>${esc(t(d.paid>0?'slipBillTotal':'docTotal'))}</span><b>${fmtD(d.totalDue)}</b></div>
+      ${d.paid>0 && f.paid?`<div class="slip-note">${esc(t('paidToDate'))}: ${fmtD(d.paid)}</div>`:''}
+      ${d.paid>0 && f.balance?`<div class="slip-total"><span>${esc(t('balanceDue'))}</span><b>${fmtD(d.balance)}</b></div>`:''}` : ''}
+      ${f.dueDate && due ? `<div class="slip-due">${esc(t('docPayBy'))}: ${esc(due)}</div>` : ''}
+      ${f.note && note ? `<div class="slip-note">${esc(note)}</div>` : ''}
+    </div>
+    ${f.signature ? `<div class="slip-foot"><div class="slip-sig">${esc(t('docReceived'))}<i></i></div><div class="slip-sig">${esc(t('docDate'))}<i></i></div></div>` : ''}
+    ${f.footer ? `<div class="slip-thanks">${esc(s.footer || t('docThanks'))}</div>` : ''}
+  </div></div>`;
+}
+
+function printTenantBills(){
+  if(!hasSlipFields()){alert(t('emptySlip'));return;}
+  const cards=cardsForPrint();
+  if(!cards.length){alert(t('noPrintTenants'));return;}
+  if(!validateCards(cards))return;
+  recalcSubTable();
+  printDoc(slipPages(cards.map(c=>cardData(c))));
+}
+
+function printSingleSlip(btn){
+  if(!hasSlipFields()){alert(t('emptySlip'));return;}
+  const card=btn.closest('.sub-card');if(!validateCards([card]))return;
+  printDoc(slipPages([cardData(card)]));
+}
+/* ---------------- WhatsApp & image slip ---------------- */
+
+function normalizePhoneBD(p){
+  let d = String(p || '').replace(/[০-৯]/g, d=>'০১২৩৪৫৬৭৮৯'.indexOf(d)).replace(/[^0-9]/g, '');
+  if(d.startsWith('880')){ /* already international */ }
+  else if(d.startsWith('0')) d = '88' + d;
+  else if(d.length === 10 && d.startsWith('1')) d = '880' + d;
+  return /^8801\d{9}$/.test(d) ? d : '';
+}
+function buildWaMessage(d){
+  const due = dueLabel(), note = payNoteText(), m = monthLabel();
+  const L = [];
+  L.push(`*${bName() || t('docBill')}* — ${t('docBill')}${m ? ' (' + m + ')' : ''}`);
+  L.push(`${t('docTenant')}: ${d.name}`);
+  L.push(`${t('docPrev')}: ${dg(d.prev)} → ${t('docCurr')}: ${dg(d.curr)}`);
+  L.push(`${t('docUnits')}: ${numD(d.units)} × ${fmtD(d.rate)} = ${fmtD(d.amount)}`);
+  if(d.dues > 0) L.push(`${t('docPrevDues')}: ${fmtD(d.dues)}`);
+  L.push(`*${t('docTotal')}: ${fmtD(d.totalDue)}*`);
+  if(due) L.push(`${t('docPayBy')}: ${due}`);
+  if(note) L.push(note);
+  L.push(t('docThanks'));
+  return L.join('\n');
+}
+function shareWhatsApp(btn){ sendTenantMessage(btn, 'wa'); }
+
+function fitText(c, text, maxW){
+  if(c.measureText(text).width <= maxW) return text;
+  let s = text;
+  while(s.length > 1 && c.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+  return s + '…';
+}
+function rrect(c, x, y, w, h, r){
+  c.beginPath(); c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.arcTo(x + w, y, x + w, y + r, r);
+  c.lineTo(x + w, y + h - r); c.arcTo(x + w, y + h, x + w - r, y + h, r); c.lineTo(x + r, y + h);
+  c.arcTo(x, y + h, x, y + h - r, r); c.lineTo(x, y + r); c.arcTo(x, y, x + r, y, r); c.closePath();
+}
+function wrapLines(c, text, maxW){
+  const words = String(text).split(/\s+/), lines = []; let cur = '';
+  words.forEach(w => {
+    const test = cur ? cur + ' ' + w : w;
+    if(c.measureText(test).width > maxW && cur){ lines.push(cur); cur = w; } else cur = test;
+  });
+  if(cur) lines.push(cur);
+  return lines.slice(0, 3);
+}
+function drawSlipCanvas(d){
+  const s = readSlipSettings(), f = s.fields, rows = [];
+  const add = (text, bold=false) => { rows.push({text:String(text),bold}); };
+  if(f.building) add(bName() || t('docBill'),true);
+  if(f.title) add(s.title || t('docBill'),true);
+  if(f.month) add(monthLabel());
+  if(f.name) add(t('docTenant') + ': ' + d.name,true);
+  if(f.phone && d.phone) add(d.phone);
+  if(f.previous) add(t('docPrev') + ': ' + dg(d.prev));
+  if(f.current) add(t('docCurr') + ': ' + dg(d.curr));
+  if(f.units) add(t('docUnits') + ': ' + numD(d.units));
+  if(f.rate) add(t('flatRate') + ': ' + fmtD(d.rate));
+  if(f.amount) add(t('billedMonth') + ': ' + fmtD(d.amount));
+  if(f.dues && d.dues > 0) add(t('docPrevDues') + ': ' + fmtD(d.dues));
+  if(f.total) add(t(d.paid>0?'slipBillTotal':'docTotal') + ': ' + fmtD(d.totalDue),true);
+  if(f.paid && d.paid>0) add(t('paidToDate')+': '+fmtD(d.paid));
+  if(f.balance && d.paid>0) add(t('balanceDue')+': '+fmtD(d.balance),true);
+  if(f.dueDate && dueLabel()) add(t('docPayBy') + ': ' + dueLabel());
+  if(f.note && payNoteText()) add(payNoteText());
+  if(f.signature) add(t('docReceived') + ': __________    ' + t('docDate') + ': __________');
+  if(f.footer) add(s.footer || t('docThanks'));
+  const cv = document.createElement('canvas'); cv.width = 1000;
+  let c = cv.getContext('2d');
+  const font = '"Nirmala UI","Segoe UI",system-ui,sans-serif';
+  const lines = rows.flatMap(row => {
+    c.font = `${row.bold ? 700 : 400} 32px ${font}`;
+    return wrapLines(c,row.text,904).flatMap(line => {
+      // Wrap unbroken notes too; no content is silently truncated in the image.
+      const parts=[]; let part='';
+      for(const char of line){ if(c.measureText(part+char).width>904){parts.push(part);part='';} part+=char; }
+      parts.push(part); return parts.map(text=>({text,bold:row.bold}));
+    });
+  });
+  cv.height = Math.max(180,96 + lines.length*52); c = cv.getContext('2d');
+  c.fillStyle='#fff'; c.fillRect(0,0,cv.width,cv.height);
+  c.strokeStyle='#1c2e37'; c.lineWidth=4; c.strokeRect(16,16,968,cv.height-32);
+  lines.forEach((line,i)=>{ c.fillStyle='#16232a'; c.font=`${line.bold ? 700 : 400} 32px ${font}`; c.fillText(line.text,48,76+i*52); });
+  return cv;
+}
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+function safeFileName(s){ return String(s).replace(/[^\wঀ-৿-]+/g, '_').slice(0, 30) || 'slip'; }
+function shareSlipImage(btn){ return sendSlipPhoto(btn); }
+
+/* ---------------- Backup / restore / CSV ---------------- */
+const CAN_SHARE_FILES = (function(){
+  try{ return !!(navigator.canShare && navigator.canShare({files: [new File(['x'], 'x.json', {type: 'application/json'})]})); }
+  catch(e){ return false; }
+})();
+function dateStamp(){
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
+function backupObject(){
+  return {app: 'dpdc-bill-calculator', version: 4, exportedAt: new Date().toISOString(), lang: LANG,
+          state: collectState(), history: HISTORY};
+}
+function exportBackup(mode){
+  const backup=backupObject(),text=JSON.stringify(backup,null,1);
+  const name=`dpdc-bill-backup-${dateStamp()}.json`;
+  const download=()=>{downloadBlob(new Blob([text],{type:'application/json'}),name);recordBackupExport(backup);};
+  if(mode==='share' && CAN_SHARE_FILES){
+    const file=new File([text],name,{type:'application/json'});
+    navigator.share({files:[file]}).then(()=>recordBackupExport(backup)).catch(error=>{if(error && error.name!=='AbortError')download();});
+  }else download();
+}
+
+function csvCell(v){
+  if(typeof v === 'number') return String(v);
+  let s = String(v ?? '');
+  if(/^[=+\-@\t\r]/.test(s)) s = "'" + s;           // block spreadsheet formula injection
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function exportCsv(){
+  const head = ['Month','Building','Flat','Phone','Previous reading','Current reading','Units','Rate','Amount','Previous dues','Total due','Paid','Balance','Status'];
+  const rows = [head.map(csvCell).join(',')];
+  HISTORY.slice().reverse().forEach(r => r.flats.forEach(f => {
+    rows.push([r.id, r.building, f.name, f.phone, f.prev, f.curr, f.units, f.rate, f.amount, f.dues,
+               totalDueOf(f), f.paid || 0, balanceOf(f), statusOf(f)].map(csvCell).join(','));
+  }));
+  downloadBlob(new Blob(['﻿' + rows.join('\r\n')], {type: 'text/csv;charset=utf-8'}), `dpdc-bill-history-${dateStamp()}.csv`);
+}
+function importBackup(input){
+  const file = input.files && input.files[0]; input.value = '';
+  if(!file) return;
+  if(file.size > 5 * 1024 * 1024){ alert(t('msgBadFile')); return; }
+  const r = new FileReader();
+  r.onload = () => {
+    let obj; try{ obj = JSON.parse(String(r.result)); }catch(e){ alert(t('msgBadFile')); return; }
+    if(!obj || obj.app !== 'dpdc-bill-calculator' || !obj.state || typeof obj.state !== 'object' || Array.isArray(obj.state)){
+      alert(t('msgBadFile')); return;
+    }
+    const hist = sanitizeHistory(obj.history);
+    if(!confirm(t('msgImportConfirm').replace('{n}', hist.length))) return;
+    window.__noSave = true; clearTimeout(__saveTimer);
+    try{
+      const data = storageSnapshot();
+      data[STORAGE_KEY] = JSON.stringify(obj.state);
+      data[HIST_KEY] = JSON.stringify(hist);
+      if(obj.lang === 'bn' || obj.lang === 'en') data[LANG_KEY] = obj.lang;
+      localStorage.setItem(APP_DATA_KEY, JSON.stringify(data));
+    }catch(e){ window.__noSave = false; alert(t('msgStorageFail')); return; }
+    toast(t('msgImported'));
+    setTimeout(() => location.reload(), 700);
+  };
+  r.readAsText(file);
+}
+
+/* ---------------- Separate language for bills / slips / WhatsApp ---------------- */
+function inDocLang(fn){
+  const sel = document.getElementById('docLang').value;
+  const old = LANG;
+  if(sel === 'en' || sel === 'bn') LANG = sel;
+  try{ return fn(); } finally { LANG = old; }
+}
+['printMainBill','printSubSheet','printTenantBills','printSingleSlip','printCollectionReport','shareWhatsApp','shareSlipImage'].forEach(n => {
+  const orig = window[n];
+  window[n] = function(){ const a = arguments, self = this; return inDocLang(() => orig.apply(self, a)); };
+});
+
+/* ---------------- Local persistence ---------------- */
+const STORAGE_KEY = 'dpdc-bill-app-state-v2';
+
+function collectState(){
+  const slabs = [];
+  document.querySelectorAll('.slab-upto').forEach((el, i) => {
+    slabs.push({upto: el.value, rate: document.querySelectorAll('.slab-rate')[i].value});
+  });
+  return {
+    buildingName: document.getElementById('buildingName').value,
+    billingMonth: document.getElementById('billingMonth').value,
+    payNote: document.getElementById('payNote').value,
+    docLang: document.getElementById('docLang').value,
+    tariffLabel: document.getElementById('tariffLabel').value,
+    prevReading: document.getElementById('prevReading').value,
+    currReading: document.getElementById('currReading').value,
+    mainUnits: document.getElementById('mainUnits').value,
+    meterType: document.getElementById('meterType').value,
+    meterPhase: document.getElementById('meterPhase').value,
+    meterRent: document.getElementById('meterRent').value,
+    loadKw: document.getElementById('loadKw').value,
+    demandRate: document.getElementById('demandRate').value,
+    prepaidRebateRate: document.getElementById('prepaidRebateRate').value,
+    applyDemand: document.getElementById('applyDemand').checked,
+    applyVat: document.getElementById('applyVat').checked,
+    applyLifeline: document.getElementById('applyLifeline').checked,
+    roundAmounts: document.getElementById('roundAmounts').checked,
+    slabs,
+    fixedRate: document.getElementById('fixedRate').value,
+    meterCount: document.getElementById('meterCount').value,
+    tenantDueDate: document.getElementById('tenantDueDate').value,
+    mainBillOverride: document.getElementById('mainBillOverride').value,
+    ledgerFeatures: collectImprovements(),
+    slipSettings: readSlipSettings(), messageTemplate: document.getElementById('messageTemplate').value,
+    subMeters: allCardsRaw()
+  };
+}
+function saveState(){
+  if(window.__noSave) return;
+  try{ setStored(STORAGE_KEY, JSON.stringify(collectState())); refreshBackupReminder(); return true; }catch(e){ toast(t('msgStorageFail')); return false; }
+}
+function loadState(){
+  let s;
+  try{
+    const raw = getStored(STORAGE_KEY);
+    if(!raw) return false;
+    s = JSON.parse(raw);
+  }catch(e){ return false; }
+  if(!s || typeof s !== 'object' || Array.isArray(s)) return false;
+  const str = (v, n) => String(v ?? '').slice(0, n);
+  const num = (v, d) => { const x = parseFloat(v); return Number.isFinite(x) ? x : d; };
+
+  document.getElementById('buildingName').value = str(s.buildingName, 60);
+  document.getElementById('billingMonth').value = /^\d{4}-\d{2}$/.test(str(s.billingMonth, 7)) ? s.billingMonth : '';
+  document.getElementById('payNote').value = str(s.payNote, 80);
+  document.getElementById('docLang').value = ['en','bn'].includes(s.docLang) ? s.docLang : 'app';
+  document.getElementById('tariffLabel').value = s.tariffLabel === undefined ? 'BERC June 2026' : str(s.tariffLabel, 40);
+  document.getElementById('prevReading').value = num(s.prevReading, 0);
+  document.getElementById('currReading').value = num(s.currReading, 0);
+  document.getElementById('mainUnits').value = num(s.mainUnits, 0);
+  document.getElementById('meterType').value = s.meterType === 'prepaid' ? 'prepaid' : 'postpaid';
+  document.getElementById('meterPhase').value = s.meterPhase === 'three' ? 'three' : 'single';
+  document.getElementById('meterRent').value = num(s.meterRent, 10);
+  document.getElementById('loadKw').value = num(s.loadKw, 0);
+  document.getElementById('demandRate').value = num(s.demandRate, 42);
+  document.getElementById('prepaidRebateRate').value = num(s.prepaidRebateRate, 0.5);
+  document.getElementById('applyDemand').checked = !!s.applyDemand;
+  document.getElementById('applyVat').checked = s.applyVat !== false;
+  document.getElementById('applyLifeline').checked = s.applyLifeline !== false;
+  document.getElementById('roundAmounts').checked = !!s.roundAmounts;
+  onMeterTypeChange();
+  toggleDemandFields();
+
+  if(Array.isArray(s.slabs) && s.slabs.length === DEFAULT_SLABS.length && s.slabs.every(x => x && typeof x === 'object')){
+    buildSlabRows(DEFAULT_SLABS.map((d, i) => ({...d,
+      upto: (s.slabs[i].upto === '' || s.slabs[i].upto === null) ? null : nn(s.slabs[i].upto),
+      rate: nn(s.slabs[i].rate)})));
+  } else {
+    resetSlabs();
+  }
+
+  document.getElementById('fixedRate').value = num(s.fixedRate, 12);
+  document.getElementById('meterCount').value = num(s.meterCount, 20);
+  document.getElementById('tenantDueDate').value = /^\d{4}-\d{2}-\d{2}$/.test(str(s.tenantDueDate, 10)) ? s.tenantDueDate : '';
+  document.getElementById('mainBillOverride').value = num(s.mainBillOverride, 0);
+
+  SUB_DRAFTS = Array.isArray(s.subMeters) ? s.subMeters.slice(0,30) : [];
+  document.getElementById('subBody').innerHTML = '';
+  rebuildSubTable();
+  if(Array.isArray(s.subMeters)) { applyCardsRaw(s.subMeters); recalcSubTable(); }
+  applySlipSettings(s.slipSettings);
+  if(typeof s.messageTemplate === 'string') document.getElementById('messageTemplate').value = s.messageTemplate.slice(0,5000);
+  restoreImprovements(s.ledgerFeatures);
+  return true;
+}
+function clearSavedData(){
+  if(confirm(t('msgClear'))){
+    window.__noSave = true; clearTimeout(__saveTimer);
+    try{
+      localStorage.setItem(APP_DATA_KEY, '{}');
+    }catch(e){ window.__noSave = false; alert(t('msgStorageFail')); return; }
+    location.reload();
+  }
+}
+
+let __saveTimer;
+document.addEventListener('input', ()=>{ clearTimeout(__saveTimer); __saveTimer=setTimeout(saveState, 400); });
+document.addEventListener('change', ()=>{ clearTimeout(__saveTimer); __saveTimer=setTimeout(saveState, 400); });
+
+/* ---------------- PWA: install prompt ---------------- */
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('installBtn').style.display = 'inline-flex';
+});
+function installApp(){
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  deferredPrompt.userChoice.finally(()=>{
+    deferredPrompt = null;
+    document.getElementById('installBtn').style.display = 'none';
+  });
+}
+window.addEventListener('appinstalled', ()=>{ document.getElementById('installBtn').style.display = 'none'; });
+
+/* ---------------- PWA: offline banner ---------------- */
+function updateOnlineStatus(){ document.getElementById('offlineBanner').classList.toggle('show', !navigator.onLine); }
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
+/* ---------------- PWA: service worker ---------------- */
+/* The single-file edition runs without a service worker. */
+
+/* ---------------- Slip configuration and editable messages ---------------- */
+Object.assign(I18N.en, {
+  pageOrientation:'Page orientation',orientationAuto:'Automatic — best fit',orientationPortrait:'Portrait',orientationLandscape:'Landscape',
+  showAllFields:'Show all information',hideAllFields:'Hide all information',
+  fieldHelp:'Tick the information you want on tenant slips. Untick anything you want to hide. Your choices also apply to slip photos.',
+  gridSummary:'{o} · {c} columns × {r} rows',emptySlip:'No information selected. Tick the fields you want on the slip.',
+  waMessage:'WhatsApp message',smsMessage:'SMS message',photoBill:'Share slip photo',
+  preparingPhoto:'Preparing photo…',downloadPhoto:'Download photo',closePhoto:'Close photo preview',
+  photoReady:'Choose WhatsApp or another app, then choose this tenant in the share menu.',
+  photoRecipient:'Tenant',photoDownloaded:'Photo downloaded. Attach it to this tenant’s chat in WhatsApp or Messages.',
+  photoShared:'Photo handed to the selected app. Finish sending there.',
+  photoCancelled:'Sharing cancelled. You can share again or download the photo.',photoFailed:'Could not create the slip photo. Please try again.',
+  slipSettings:'Slip & message settings',slipsPerPage:'Slips per A4 page',previewTenant:'Preview tenant',
+  pageHint:'A4 · 10 mm margins · Print at 100% with browser headers and footers off. Automatic mode chooses the orientation and grid that keep your selected information readable.',
+  slipFields:'Show on tenant slips',slipTitle:'Bill title',slipSignature:'Signature lines',slipFooter:'Footer text',
+  customTitle:'Custom bill title (optional)',customFooter:'Custom footer (optional)',messageTemplate:'Message template (optional)',
+  templateHint:"Leave blank for a bill using the visible slip fields. You can edit a single tenant's message on their card. Template fields:",
+  sendHint:'WhatsApp and SMS open an addressed message in one click. Review and tap Send in the messaging app. SMS needs a phone or a configured messaging app.',
+  printConfigured:'Print tenant slips',resetSlip:'Reset slip settings',slipPreview:'Slip preview',
+  draftHint:'Hidden meters keep their readings. Increase the meter count to restore them.',editMsg:'Edit message',
+  messageFor:'Message for',autoMessage:'Use automatic message',done:'Done',msgEmpty:'Enter a message before opening WhatsApp or SMS.',
+  msgPhoneRequired:'Enter a valid Bangladeshi mobile number for this tenant first.',pageSummary:'{n} slips · {p} A4 pages · {s} per page'
+});
+Object.assign(I18N.bn, {
+  pageOrientation:'পাতার দিক',orientationAuto:'স্বয়ংক্রিয় — সেরা বিন্যাস',orientationPortrait:'লম্বালম্বি (পোর্ট্রেট)',orientationLandscape:'আড়াআড়ি (ল্যান্ডস্কেপ)',
+  showAllFields:'সব তথ্য দেখান',hideAllFields:'সব তথ্য লুকান',
+  fieldHelp:'স্লিপে যে তথ্য রাখতে চান তাতে টিক দিন। লুকাতে চাইলে টিক সরান। স্লিপের ছবিতেও এই পছন্দ কার্যকর হবে।',
+  gridSummary:'{o} · {c} কলাম × {r} সারি',emptySlip:'কোনো তথ্য নির্বাচন করা হয়নি। স্লিপে যে তথ্য রাখতে চান তাতে টিক দিন।',
+  waMessage:'হোয়াটসঅ্যাপ মেসেজ',smsMessage:'SMS মেসেজ',photoBill:'স্লিপের ছবি শেয়ার',
+  preparingPhoto:'ছবি তৈরি হচ্ছে…',downloadPhoto:'ছবি ডাউনলোড',closePhoto:'ছবির প্রিভিউ বন্ধ',
+  photoReady:'শেয়ার মেনুতে হোয়াটসঅ্যাপ বা অন্য অ্যাপ বেছে নিয়ে এই ভাড়াটিয়ার চ্যাট নির্বাচন করুন।',
+  photoRecipient:'ভাড়াটিয়া',photoDownloaded:'ছবি ডাউনলোড হয়েছে। হোয়াটসঅ্যাপ বা মেসেজে এই ভাড়াটিয়ার চ্যাটে ছবিটি যুক্ত করুন।',
+  photoShared:'ছবি নির্বাচিত অ্যাপে পাঠানো হয়েছে। সেই অ্যাপে পাঠানো সম্পন্ন করুন।',
+  photoCancelled:'শেয়ার বাতিল হয়েছে। আবার শেয়ার বা ছবি ডাউনলোড করতে পারেন।',photoFailed:'স্লিপের ছবি তৈরি করা যায়নি। আবার চেষ্টা করুন।',
+  slipSettings:'স্লিপ ও মেসেজের সেটিংস',slipsPerPage:'প্রতি A4 পাতায় স্লিপ',previewTenant:'প্রিভিউয়ের ভাড়াটিয়া',
+  pageHint:'A4 · ১০ মিমি মার্জিন · ১০০% স্কেলে প্রিন্ট করুন, ব্রাউজারের হেডার ও ফুটার বন্ধ রাখুন। স্বয়ংক্রিয় মোড নির্বাচিত তথ্য পড়ার উপযোগী রাখতে পাতার দিক ও বিন্যাস বেছে নেয়।',
+  slipFields:'ভাড়াটিয়ার স্লিপে যা দেখাবেন',slipTitle:'বিলের শিরোনাম',slipSignature:'স্বাক্ষরের লাইন',slipFooter:'ফুটারের লেখা',
+  customTitle:'নিজস্ব বিলের শিরোনাম (ঐচ্ছিক)',customFooter:'নিজস্ব ফুটার (ঐচ্ছিক)',messageTemplate:'মেসেজের টেমপ্লেট (ঐচ্ছিক)',
+  templateHint:'ফাঁকা রাখলে স্লিপের দৃশ্যমান তথ্য দিয়ে মেসেজ তৈরি হবে। প্রতিটি ভাড়াটিয়ার কার্ডে আলাদা মেসেজ সম্পাদনা করতে পারবেন। টেমপ্লেটের ঘর:',
+  sendHint:'এক ক্লিকে নম্বরসহ মেসেজ হোয়াটসঅ্যাপ বা SMS-এ খুলবে। দেখে নিয়ে সেই অ্যাপে Send চাপুন। SMS-এর জন্য ফোন বা মেসেজিং অ্যাপ প্রয়োজন।',
+  printConfigured:'ভাড়াটিয়ার স্লিপ প্রিন্ট',resetSlip:'স্লিপ সেটিংস রিসেট',slipPreview:'স্লিপ প্রিভিউ',
+  draftHint:'লুকানো মিটারের রিডিং সংরক্ষিত থাকে। মিটারের সংখ্যা বাড়ালে আবার দেখা যাবে।',editMsg:'মেসেজ সম্পাদনা',
+  messageFor:'যার জন্য মেসেজ',autoMessage:'স্বয়ংক্রিয় মেসেজ ব্যবহার',done:'সম্পন্ন',msgEmpty:'হোয়াটসঅ্যাপ বা SMS খোলার আগে মেসেজ লিখুন।',
+  msgPhoneRequired:'আগে এই ভাড়াটিয়ার বৈধ বাংলাদেশি মোবাইল নম্বর লিখুন।',pageSummary:'{n}টি স্লিপ · {p}টি A4 পাতা · প্রতি পাতায় {s}টি'
+});
+function readSlipSettings(){
+  const fields = {};
+  document.querySelectorAll('[data-slip]').forEach(el=>{fields[el.dataset.slip]=el.checked;});
+  const n = parseInt(document.getElementById('slipsPerPage').value,10);
+  const orientation = document.getElementById('slipOrientation').value;
+  return {photoMessage:document.getElementById('photoIncludeMessage').checked,perPage:Math.max(1,Math.min(15,n || 6)),orientation:['auto','portrait','landscape'].includes(orientation)?orientation:'auto',fields,
+    title:document.getElementById('slipTitleText').value.trim().slice(0,60),
+    footer:document.getElementById('slipFooterText').value.trim().slice(0,120)};
+}
+function applySlipSettings(settings){
+  const s = settings && typeof settings === 'object' ? settings : {};
+  document.getElementById('slipsPerPage').value = Math.max(1,Math.min(15,parseInt(s.perPage,10)||6));
+  document.getElementById('slipOrientation').value = ['auto','portrait','landscape'].includes(s.orientation)?s.orientation:'auto';
+  document.getElementById('photoIncludeMessage').checked = s.photoMessage === true;
+  document.querySelectorAll('[data-slip]').forEach(el=>{
+    el.checked = s.fields && typeof s.fields[el.dataset.slip] === 'boolean' ? s.fields[el.dataset.slip] : el.defaultChecked;
+  });
+  document.getElementById('slipTitleText').value = String(s.title ?? '').slice(0,60);
+  document.getElementById('slipFooterText').value = String(s.footer ?? '').slice(0,120);
+}
+function resetSlipSettings(){ applySlipSettings(null); refreshSlipPreview(); saveState(); }
+function selectSlipFields(show){
+  document.querySelectorAll('[data-slip]').forEach(el=>{el.checked=show;});
+  refreshSlipPreview();saveState();
+}
+function hasSlipFields(){return Object.values(readSlipSettings().fields).some(Boolean);}
+function openSlipSettings(){
+  const settings=document.getElementById('slipSettings');settings.open=true;
+  refreshSlipPreview();settings.scrollIntoView({block:'start'});document.getElementById('slipsPerPage').focus({preventScroll:true});
+}
+function refreshSlipPreview(){
+  const select = document.getElementById('previewTenant'); if(!select) return;
+  refreshPrintSelection();
+  const cards = Array.from(document.querySelectorAll('#subBody .sub-card'));
+  const chosen = select.value;
+  const names = cards.map((card,i)=>({id:card.dataset.meterId,name:cardData(card,i).name}));
+  const signature = JSON.stringify(names);
+  if(select.dataset.options !== signature){
+    select.replaceChildren(...names.map(d=>new Option(d.name,d.id)));
+    select.dataset.options = signature;
+    if(names.some(d=>d.id === chosen)) select.value = chosen;
+  }
+  const card = cards.find(c=>c.dataset.meterId === select.value) || cards[0];
+  const selected=Object.values(readSlipSettings().fields).some(Boolean);
+  document.getElementById('slipPreview').innerHTML = selected && card ? inDocLang(()=>slipHtml(cardData(card))) : `<p class="hint">${esc(t('emptySlip'))}</p>`;
+  const targets=cardsForPrint();
+  const n = targets.length, s = readSlipSettings().perPage;
+  const layout=inDocLang(()=>chooseSlipLayout(targets.map((c,i)=>cardData(c))));
+  refreshReadability(layout);
+  document.getElementById('slipPageSummary').textContent = t('pageSummary').replace('{n}',dg(n)).replace('{p}',dg(Math.ceil(n/s))).replace('{s}',dg(s))+' · '+
+    t('gridSummary').replace('{o}',t(layout.orientation==='landscape'?'orientationLandscape':'orientationPortrait')).replace('{c}',dg(layout.cols)).replace('{r}',dg(layout.rows));
+  const diagram=document.getElementById('slipPageLayout');
+  diagram.style.cssText=`width:min(100%,${layout.paperWidth>layout.paperHeight?250:177}px);aspect-ratio:${layout.paperWidth}/${layout.paperHeight};grid-template-columns:repeat(${layout.cols},minmax(0,1fr));grid-template-rows:repeat(${layout.rows},minmax(0,1fr));`;
+  diagram.replaceChildren(...Array.from({length:layout.cols*layout.rows},(_,i)=>{
+    const cell=document.createElement('span');if(i<s && i<n)cell.textContent=dg(i+1);else cell.className='empty';return cell;
+  }));
+}
+let SLIP_LAYOUT_CACHE = {key:'',layout:null};
+function fitSlipElement(slip,available){
+  let scale=1;slip.style.setProperty('--slip-scale',scale);
+  for(let i=0;i<6 && slip.offsetHeight>available;i++){
+    scale *= available/Math.max(1,slip.offsetHeight)*.98;
+    slip.style.setProperty('--slip-scale',scale);
+  }
+  return scale;
+}
+function chooseSlipLayout(slips){
+  const settings=readSlipSettings(),n=settings.perPage;
+  // One measurement for each candidate width. Use the most detailed actual slips
+  // so hiding fields or changing the document language can change the best fit.
+  const samples=slips.slice().sort((a,b)=>{
+    const size=d=>d.name.length*3+(d.phone||'').length+(d.dues>0?100:0)+String(d.totalDue).length*3;
+    return size(b)-size(a);
+  }).slice(0,3);
+  if(!samples.length)samples.push({name:'',phone:'',prev:0,curr:0,units:0,rate:0,amount:0,dues:0,totalDue:0});
+  const html=samples.map(slipHtml).join('');
+  const key=JSON.stringify([n,settings.orientation,html]);
+  if(SLIP_LAYOUT_CACHE.key===key)return SLIP_LAYOUT_CACHE.layout;
+  const measure=document.createElement('div');measure.className='slip-page slip-measure';
+  measure.style.cssText='position:fixed;left:-10000px;top:0;display:block;height:auto;visibility:hidden;';
+  measure.innerHTML=html;document.body.appendChild(measure);
+  let best=null;
+  const orientations=settings.orientation==='auto'?['portrait','landscape']:[settings.orientation];
+  try{
+    for(const orientation of orientations){
+      const paperWidth=orientation==='landscape'?297:210,paperHeight=orientation==='landscape'?210:297;
+      const width=paperWidth-20,height=paperHeight-21;
+      for(let cols=1;cols<=Math.min(n,5);cols++){
+        const rows=Math.ceil(n/cols),cellWidth=(width-(cols-1)*2)/cols,cellHeight=(height-(rows-1)*2)/rows;
+        if(cellWidth<36)continue;
+        measure.style.width=cellWidth+'mm';
+        const scale=Math.min(...Array.from(measure.querySelectorAll('.tenant-slip'),slip=>fitSlipElement(slip,(cellHeight-2.2)*96/25.4)));
+        const waste=cols*rows-n,widthDistance=Math.abs(cellWidth-90);
+        const candidate={orientation,cols,rows,width,height,paperWidth,paperHeight,scale,waste,widthDistance};
+        if(!best || scale>best.scale+.005 || (Math.abs(scale-best.scale)<=.005 && (waste<best.waste || (waste===best.waste && widthDistance<best.widthDistance))))best=candidate;
+      }
+    }
+  }finally{measure.remove();}
+  SLIP_LAYOUT_CACHE={key,layout:best};return best;
+}
+function slipPages(slips){
+  const n = readSlipSettings().perPage;
+  const layout=chooseSlipLayout(slips),{cols,rows,width,height,orientation}=layout;
+  const pages = [];
+  for(let i=0;i<slips.length;i+=n) pages.push(`<section class="slip-page" style="--slip-cols:${cols};--slip-rows:${rows};width:${width}mm;height:${height}mm;page:tenant-${orientation}" data-orientation="${orientation}">${slips.slice(i,i+n).map(slipHtml).join('')}</section>`);
+  return `<style>@page tenant-${orientation}{size:A4 ${orientation};margin:10mm;}</style>`+pages.join('');
+}
+function fitPrintedSlips(){
+  const area = document.getElementById('printArea');
+  if(!area.querySelector('.slip-page')) return;
+  const previous = area.style.cssText;
+  area.style.cssText = 'display:block;position:fixed;left:-10000px;top:0;width:max-content;padding:0;';
+  area.querySelectorAll('.slip-cell').forEach(cell=>{
+    const slip = cell.querySelector('.tenant-slip');
+    fitSlipElement(slip,cell.clientHeight-8);
+  });
+  area.style.cssText = previous;
+}
+window.addEventListener('beforeprint',fitPrintedSlips);
+function defaultTenantMessage(d){
+  const s=readSlipSettings(),f=s.fields,lines=[];
+  if(f.building) lines.push(bName() || t('docBill'));
+  if(f.title) lines.push(s.title || t('docBill'));
+  if(f.month && monthLabel()) lines.push(t('docMonth')+': '+monthLabel());
+  if(f.name) lines.push(t('docTenant')+': '+d.name);
+  if(f.phone && d.phone) lines.push(d.phone);
+  if(f.previous) lines.push(t('docPrev')+': '+dg(d.prev));
+  if(f.current) lines.push(t('docCurr')+': '+dg(d.curr));
+  if(f.units) lines.push(t('docUnits')+': '+numD(d.units));
+  if(f.rate) lines.push(t('flatRate')+': '+fmtD(d.rate));
+  if(f.amount) lines.push(t('billedMonth')+': '+fmtD(d.amount));
+  if(f.dues && d.dues>0) lines.push(t('docPrevDues')+': '+fmtD(d.dues));
+  if(f.total) lines.push(t(d.paid>0?'slipBillTotal':'docTotal')+': '+fmtD(d.totalDue));
+  if(f.paid && d.paid>0)lines.push(t('paidToDate')+': '+fmtD(d.paid));
+  if(f.balance && d.paid>0)lines.push(t('balanceDue')+': '+fmtD(d.balance));
+  if(f.dueDate && dueLabel()) lines.push(t('docPayBy')+': '+dueLabel());
+  if(f.note && payNoteText()) lines.push(payNoteText());
+  if(f.footer) lines.push(s.footer || t('docThanks'));
+  return lines.join('\n');
+}
+function tenantMessage(card){
+  if(typeof card.__messageDraft === 'string') return card.__messageDraft;
+  const d=cardData(card),template=document.getElementById('messageTemplate').value;
+  if(!template.trim()) return defaultTenantMessage(d);
+  const values={building:bName(),month:monthLabel(),name:d.name,phone:d.phone,
+    previous:dg(d.prev),current:dg(d.curr),units:numD(d.units),rate:fmtD(d.rate),
+    amount:fmtD(d.amount),dues:fmtD(d.dues),total:fmtD(d.totalDue),paid:fmtD(d.paid),balance:fmtD(d.balance),dueDate:dueLabel(),note:payNoteText()};
+  return template.replace(/\{(\w+)\}/g,(token,key)=>Object.hasOwn(values,key)?values[key]:token);
+}
+function editTenantMessage(btn){
+  const card=btn.closest('.sub-card');let editor=card.querySelector('.message-editor');
+  if(!editor){
+    editor=document.createElement('div');editor.className='message-editor';
+    const id='message-'+card.dataset.meterId;
+    editor.innerHTML=`<label for="${id}"></label><textarea id="${id}" rows="6" maxlength="5000"></textarea>
+      <p class="hint">${esc(t('sendHint'))}</p><div class="btnrow">
+      <button type="button" class="ghost" onclick="sendTenantMessage(this,'wa')">WhatsApp</button>
+      <button type="button" class="ghost" onclick="sendTenantMessage(this,'sms')">SMS</button>
+      <button type="button" class="ghost" onclick="resetTenantMessage(this)">${esc(t('autoMessage'))}</button>
+      <button type="button" class="ghost" onclick="this.closest('.message-editor').hidden=true">${esc(t('done'))}</button></div>`;
+    editor.querySelector('textarea').addEventListener('input',e=>{card.__messageDraft=e.target.value;});card.appendChild(editor);
+  }
+  editor.hidden=false;editor.querySelector('label').textContent=t('messageFor')+' '+cardData(card).name;
+  const input=editor.querySelector('textarea');input.value=inDocLang(()=>tenantMessage(card));input.focus();
+}
+function resetTenantMessage(btn){
+  const card=btn.closest('.sub-card');card.__messageDraft=null;
+  card.querySelector('.message-editor textarea').value=inDocLang(()=>tenantMessage(card));saveState();
+}
+function smsUrl(phone,message){
+  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints>1);
+  return 'sms:+'+phone+(ios?'&':'?')+'body='+encodeURIComponent(message);
+}
+function launchSms(url){ window.location.href=url; }
+function showSlipPhoto(card,canvas,d){
+  let panel=card.querySelector('.slip-photo-share');
+  if(!panel){
+    panel=document.createElement('section');panel.className='slip-photo-share';
+    panel.innerHTML='<h4></h4><p class="photo-recipient"></p><p class="hint photo-status" role="status" aria-live="polite"></p><img alt=""><div class="btnrow"></div>';
+    card.appendChild(panel);
+  }
+  panel.hidden=false;panel.querySelector('h4').textContent=t('photoBill');
+  panel.querySelector('.photo-recipient').textContent=t('photoRecipient')+': '+d.name+(d.phone?' · '+d.phone:'');
+  const img=panel.querySelector('img');img.src=canvas.toDataURL('image/png');img.alt=t('photoBill')+' — '+d.name;
+  const actions=panel.querySelector('.btnrow');actions.replaceChildren();
+  for(const [label,handler] of [
+    [t('photoBill'),event=>sendSlipPhoto(event.currentTarget)],
+    [t('downloadPhoto'),event=>sendSlipPhoto(event.currentTarget,'download')],
+    [t('closePhoto'),()=>{panel.hidden=true;}]
+  ]){
+    const button=document.createElement('button');button.type='button';button.className='ghost';button.textContent=label;button.addEventListener('click',handler);actions.appendChild(button);
+  }
+  return panel.querySelector('.photo-status');
+}
+async function sendSlipPhoto(btn,mode='share'){
+  if(!hasSlipFields()){toast(t('emptySlip'));return;}
+  const card=btn.closest('.sub-card');if(!validateCards([card]))return;if(card.__sharingPhoto)return;
+  card.__sharingPhoto=true;btn.disabled=true;btn.setAttribute('aria-busy','true');
+  const label=btn.textContent;btn.textContent=t('preparingPhoto');
+  try{
+    const d=cardData(card);
+    // Capture the selected document language synchronously, before awaiting PNG encoding.
+    const canvas=inDocLang(()=>drawSlipCanvas(d));
+    const caption=readSlipSettings().photoMessage ? inDocLang(()=>tenantMessage(card)) : '';
+    const blob=await new Promise((resolve,reject)=>canvas.toBlob(value=>value?resolve(value):reject(new Error('PNG encoding failed')),'image/png'));
+    const name=`bill-${safeFileName(d.name)}-${document.getElementById('billingMonth').value || dateStamp()}.png`;
+    const file=new File([blob],name,{type:'image/png'});
+    const status=showSlipPhoto(card,canvas,d);showPhotoCaption(card,caption);status.textContent=t('photoReady');
+    const download=()=>{downloadBlob(blob,name);status.textContent=t('photoDownloaded');};
+    if(mode==='download'){download();return;}
+    let canShare=false;
+    try{canShare=typeof navigator.share==='function' && typeof navigator.canShare==='function' && navigator.canShare({files:[file]});}catch{}
+    if(!canShare){download();return;}
+    try{
+      await navigator.share({files:[file],title:d.name+' — '+inDocLang(()=>t('docBill')),...(caption?{text:caption}:{})});
+      status.textContent=t('photoShared');
+    }catch(error){
+      if(error && error.name==='AbortError')status.textContent=t('photoCancelled');
+      else download();
+    }
+  }catch{toast(t('photoFailed'));}
+  finally{card.__sharingPhoto=false;btn.disabled=false;btn.removeAttribute('aria-busy');btn.textContent=label;}
+}
+function sendTenantMessage(btn,channel){
+  const card=btn.closest('.sub-card');if(!validateCards([card]))return;
+  const d=cardData(card),phone=normalizePhoneBD(d.phone);
+  if(!phone){alert(t('msgPhoneRequired'));card.querySelector('.sub-phone').focus();return;}
+  const message=inDocLang(()=>tenantMessage(card));
+  if(!message.trim()){alert(t('msgEmpty'));return;}
+  saveState();
+  if(channel === 'sms') launchSms(smsUrl(phone,message));
+  else window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(message),'_blank','noopener,noreferrer');
+}
+document.addEventListener('input',e=>{if(e.target.closest('#panel-main')) invalidateMain();refreshSlipPreview();});
+document.addEventListener('change',e=>{if(e.target.closest('#panel-main')) invalidateMain();refreshSlipPreview();});
+
+/* ---------------- Selected printing, validation and ledger safeguards ---------------- */
+Object.assign(I18N.en,{
+  slipPreset:'Slip layout preset',choosePreset:'Choose a preset…',presetMinimal:'Minimal',presetStandard:'Standard',presetDetailed:'Detailed',
+  printWhich:'Tenants to print',printAll:'All tenants',printUnpaid:'Unpaid / partly paid',printSelected:'Selected tenants',
+  skipZero:'Exclude zero bills (including dues)',selectAllTenants:'Select all tenants',clearTenants:'Clear selection',
+  presetName:'Save this layout as',saveLayout:'Save layout',presetSaved:'Layout saved.',presetNameRequired:'Enter a name for this layout.',presetLimit:'You can save up to 10 layouts. Use an existing name to replace one.',
+  photoWithMessage:'Include my edited message when sharing a slip photo',photoCaptionHelp:'Some share apps handle the photo and text separately. The photo preview keeps the message available to copy.',
+  photoCaption:'Message to share with the photo',copyMessage:'Copy message',copyManually:'Select and copy this message.',
+  noPrintTenants:'No tenants match your print selection. Select tenants or change the filter.',
+  invalidReading:'Correct the reading for {name}: enter non-negative numbers and a current reading at least as high as the previous reading.',
+  invalidMain:'Correct the main meter readings. Current must be at least previous. To enter units directly, clear both readings first.',
+  smallPrint:'This dense layout reduces text size. Fewer slips per page will make it easier to read.',clearerLayout:'Use fewer slips for larger text',
+  locked:'Locked',lockMonth:'Lock month',unlockMonth:'Unlock month',lockedError:'This month is locked. Unlock it in History before editing bills or payments.',
+  confirmLock:'Lock the saved tenant bills and payments for this month? Unsaved draft edits for this month will be replaced by the saved record.',
+  confirmUnlock:'Unlock this month to allow corrections to tenant bills and payments?',lockedNotice:'Tenant bills and payments for {m} are locked. Use History to unlock for corrections.',
+  slipBillTotal:'Bill total',receipt:'Receipt',paymentReceipt:'Payment receipt',paymentAdjustment:'Payment adjustment',receiptNumber:'Receipt number',recordedOn:'Recorded on',previouslyRecorded:'Previously recorded (date unavailable)',
+  paymentAmount:'Payment recorded',adjustmentAmount:'Adjustment recorded',paidToDate:'Paid to date',balanceDue:'Balance due',noReceipt:'No payment has been recorded for this tenant.',
+  paidHelp:'Total paid to date. Increasing records a payment; decreasing records an adjustment.',
+  backupNone:'No backup export recorded yet.',backupChanged:'Data has changed since your last backup export.',backupOld:'Your last backup export was more than 7 days ago.',backupLast:'Last backup export: {d}',exportNow:'Export backup',
+});
+Object.assign(I18N.bn,{
+  slipPreset:'স্লিপের সংরক্ষিত বিন্যাস',choosePreset:'একটি বিন্যাস বেছে নিন…',presetMinimal:'সংক্ষিপ্ত',presetStandard:'সাধারণ',presetDetailed:'বিস্তারিত',
+  printWhich:'যাদের স্লিপ প্রিন্ট হবে',printAll:'সব ভাড়াটিয়া',printUnpaid:'বকেয়া / আংশিক পরিশোধিত',printSelected:'নির্বাচিত ভাড়াটিয়া',
+  skipZero:'শূন্য বিল বাদ দিন (বকেয়াসহ)',selectAllTenants:'সব ভাড়াটিয়া নির্বাচন',clearTenants:'নির্বাচন মুছুন',
+  presetName:'বিন্যাসটি যে নামে সেভ করবেন',saveLayout:'বিন্যাস সেভ',presetSaved:'বিন্যাস সেভ হয়েছে।',presetNameRequired:'বিন্যাসের নাম লিখুন।',presetLimit:'সর্বোচ্চ ১০টি বিন্যাস সেভ করা যায়। বদলাতে পুরোনো নাম দিন।',
+  photoWithMessage:'স্লিপের ছবির সঙ্গে সম্পাদিত মেসেজ দিন',photoCaptionHelp:'কিছু অ্যাপে ছবি ও লেখা আলাদাভাবে যায়। ছবির প্রিভিউতে মেসেজ কপি করার সুযোগ থাকবে।',
+  photoCaption:'ছবির সঙ্গে পাঠানোর মেসেজ',copyMessage:'মেসেজ কপি',copyManually:'এই মেসেজ নির্বাচন করে কপি করুন।',
+  noPrintTenants:'নির্বাচনে কোনো ভাড়াটিয়া নেই। ভাড়াটিয়া নির্বাচন করুন বা ফিল্টার বদলান।',
+  invalidReading:'{name}-এর রিডিং ঠিক করুন: সংখ্যা শূন্য বা বেশি হতে হবে এবং বর্তমান রিডিং আগের চেয়ে কম হতে পারবে না।',
+  invalidMain:'মূল মিটারের রিডিং ঠিক করুন। বর্তমান রিডিং আগের চেয়ে কম হবে না। সরাসরি ইউনিট লিখতে চাইলে দুই রিডিং ফাঁকা করুন।',
+  smallPrint:'এই ঘন বিন্যাসে লেখা ছোট হবে। প্রতি পাতায় কম স্লিপ দিলে পড়তে সুবিধা হবে।',clearerLayout:'কম স্লিপে বড় লেখা ব্যবহার',
+  locked:'লক করা',lockMonth:'মাস লক করুন',unlockMonth:'মাস আনলক করুন',lockedError:'মাসটি লক করা। বিল বা পেমেন্ট বদলাতে ইতিহাস থেকে আনলক করুন।',
+  confirmLock:'এই মাসের সেভ করা বিল ও পেমেন্ট লক করবেন? এই মাসের অসেভ করা পরিবর্তন সেভ করা রেকর্ড দিয়ে বদলে যাবে।',
+  confirmUnlock:'বিল ও পেমেন্ট সংশোধনের জন্য মাসটি আনলক করবেন?',lockedNotice:'{m} মাসের বিল ও পেমেন্ট লক করা। সংশোধনের জন্য ইতিহাস থেকে আনলক করুন।',
+  slipBillTotal:'মোট বিল',receipt:'রসিদ',paymentReceipt:'পেমেন্ট রসিদ',paymentAdjustment:'পেমেন্ট সংশোধন',receiptNumber:'রসিদ নম্বর',recordedOn:'রেকর্ডের তারিখ',previouslyRecorded:'আগে রেকর্ড করা (তারিখ নেই)',
+  paymentAmount:'রেকর্ড করা পেমেন্ট',adjustmentAmount:'রেকর্ড করা সংশোধন',paidToDate:'এ পর্যন্ত পরিশোধ',balanceDue:'অবশিষ্ট বকেয়া',noReceipt:'এই ভাড়াটিয়ার কোনো পেমেন্ট রেকর্ড করা নেই।',
+  paidHelp:'এ পর্যন্ত মোট পরিশোধ। বাড়ালে পেমেন্ট, কমালে সংশোধন হিসেবে রেকর্ড হবে।',
+  backupNone:'এখনো ব্যাকআপ এক্সপোর্টের রেকর্ড নেই।',backupChanged:'শেষ ব্যাকআপের পর ডেটা বদলেছে।',backupOld:'শেষ ব্যাকআপ এক্সপোর্টের পর ৭ দিনের বেশি হয়েছে।',backupLast:'শেষ ব্যাকআপ এক্সপোর্ট: {d}',exportNow:'ব্যাকআপ এক্সপোর্ট',
+});
+let PRINT_SELECTION=null,SAVED_SLIP_PRESETS=[],LAST_LOCK_APPLIED=null;
+function currentRecord(){return HISTORY.find(r=>r.id===document.getElementById('billingMonth').value);}
+function currentLockedRecord(){const record=currentRecord();return record && record.locked?record:null;}
+function billPaymentFields(id,total){
+  const record=currentRecord(),flat=record && record.flats.find(f=>f.meterId===id),paid=flat?round2(flat.paid||0):0;
+  return {paid,balance:Math.max(0,round2(total-paid))};
+}
+function cardsForPrint(){
+  const mode=document.getElementById('printFilter').value,zero=document.getElementById('skipZeroBills').checked,record=currentRecord();
+  return Array.from(document.querySelectorAll('#subBody .sub-card')).filter(card=>{
+    const d=cardData(card),saved=record && record.flats.find(f=>f.meterId===d.meterId),balance=Math.max(0,d.totalDue-(saved?saved.paid:0));
+    if(zero && d.totalDue<=0.004)return false;
+    if(mode==='unpaid')return balance>0.004;
+    if(mode==='selected')return PRINT_SELECTION===null || PRINT_SELECTION.has(d.meterId);
+    return true;
+  });
+}
+function refreshPrintSelection(){
+  const list=document.getElementById('printTenantList');if(!list)return;
+  document.getElementById('printSelection').hidden=document.getElementById('printFilter').value!=='selected';
+  const cards=Array.from(document.querySelectorAll('#subBody .sub-card'));
+  const names=cards.map(c=>{const d=cardData(c);return {id:d.meterId,name:d.name};}),signature=JSON.stringify([LANG,names]);
+  if(list.dataset.signature===signature)return;
+  list.dataset.signature=signature;list.replaceChildren(...names.map(d=>{
+    const label=document.createElement('label'),input=document.createElement('input'),text=document.createElement('span');
+    input.type='checkbox';input.checked=PRINT_SELECTION===null || PRINT_SELECTION.has(d.id);input.dataset.printMeter=d.id;text.textContent=d.name;
+    input.addEventListener('change',()=>{
+      if(PRINT_SELECTION===null)PRINT_SELECTION=new Set(cards.map(c=>c.dataset.meterId));
+      if(input.checked)PRINT_SELECTION.add(d.id);else PRINT_SELECTION.delete(d.id);
+      refreshSlipPreview();saveState();
+    });label.append(input,text);return label;
+  }));
+}
+function selectPrintTenants(all){
+  PRINT_SELECTION=all?null:new Set();document.getElementById('printTenantList').dataset.signature='';refreshSlipPreview();saveState();
+}
+function collectImprovements(){return {selectedMeters:PRINT_SELECTION===null?null:[...PRINT_SELECTION],printFilter:document.getElementById('printFilter').value,skipZero:document.getElementById('skipZeroBills').checked,presets:SAVED_SLIP_PRESETS};}
+function restoreImprovements(raw){
+  const s=raw && typeof raw==='object'?raw:{};
+  PRINT_SELECTION=Array.isArray(s.selectedMeters)?new Set(s.selectedMeters.filter(x=>/^meter-\d+$/.test(x)).slice(0,30)):null;
+  document.getElementById('printFilter').value=['all','unpaid','selected'].includes(s.printFilter)?s.printFilter:'all';
+  document.getElementById('skipZeroBills').checked=s.skipZero===true;
+  SAVED_SLIP_PRESETS=(Array.isArray(s.presets)?s.presets:[]).filter(p=>p && typeof p.name==='string' && p.settings && typeof p.settings==='object').slice(0,10).map(p=>({name:p.name.slice(0,40),settings:p.settings}));
+  updatePresetOptions();document.getElementById('printTenantList').dataset.signature='';LAST_LOCK_APPLIED=null;
+}
+function updatePresetOptions(){
+  const select=document.getElementById('slipPreset');if(!select)return;
+  select.querySelectorAll('[data-custom-preset]').forEach(el=>el.remove());
+  SAVED_SLIP_PRESETS.forEach((p,i)=>{const option=new Option(p.name,'custom-'+i);option.dataset.customPreset='true';select.appendChild(option);});
+}
+function loadSlipLayoutPreset(value){
+  if(!value)return;
+  if(value.startsWith('custom-')){const saved=SAVED_SLIP_PRESETS[+value.slice(7)];if(saved)applySlipSettings(saved.settings);}
+  else{
+    const fields={},minimal=['name','month','total','paid','balance','dueDate','note'];
+    document.querySelectorAll('[data-slip]').forEach(el=>{fields[el.dataset.slip]=value==='minimal'?minimal.includes(el.dataset.slip):value==='detailed'?true:el.defaultChecked;});
+    applySlipSettings({...readSlipSettings(),fields});
+  }
+  refreshSlipPreview();saveState();
+}
+function saveSlipLayoutPreset(){
+  const name=document.getElementById('slipPresetName').value.trim().slice(0,40);if(!name){alert(t('presetNameRequired'));return;}
+  const at=SAVED_SLIP_PRESETS.findIndex(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(at<0 && SAVED_SLIP_PRESETS.length>=10){alert(t('presetLimit'));return;}
+  const before=SAVED_SLIP_PRESETS.slice(),preset={name,settings:readSlipSettings()};if(at<0)SAVED_SLIP_PRESETS.push(preset);else SAVED_SLIP_PRESETS[at]=preset;
+  if(!saveState()){SAVED_SLIP_PRESETS=before;updatePresetOptions();return;}
+  updatePresetOptions();toast(t('presetSaved'));
+}
+function readingError(card){
+  const prev=card.querySelector('.sub-prev'),curr=card.querySelector('.sub-curr');
+  const invalid=el=>el.value.trim()==='' || !Number.isFinite(Number(el.value)) || Number(el.value)<0;
+  if(invalid(prev))return prev;
+  if(invalid(curr) || Number(curr.value)<Number(prev.value))return curr;
+  return null;
+}
+function validateCards(cards=Array.from(document.querySelectorAll('#subBody .sub-card'))){
+  let first=null;
+  cards.forEach(card=>{
+    card.querySelectorAll('.sub-prev,.sub-curr').forEach(el=>el.removeAttribute('aria-invalid'));
+    const error=readingError(card);if(error){error.setAttribute('aria-invalid','true');if(!first)first={card,error};}
+  });
+  if(first){alert(t('invalidReading').replace('{name}',cardData(first.card).name));first.error.focus();return false;}return true;
+}
+function validateMainReadings(){
+  const p=document.getElementById('prevReading'),c=document.getElementById('currReading'),u=document.getElementById('mainUnits');
+  const valid=el=>el.value.trim()!=='' && Number.isFinite(Number(el.value)) && Number(el.value)>=0;
+  if(valid(u) && ((!p.value && !c.value) || (valid(p)&&valid(c)&&Number(c.value)>=Number(p.value))))return true;
+  alert(t('invalidMain'));c.setAttribute('aria-invalid','true');c.focus();return false;
+}
+function refreshReadability(layout){
+  const note=document.getElementById('printReadability');note.hidden=layout.scale>=.95 || !hasSlipFields();
+  note.replaceChildren(document.createTextNode(t('smallPrint')));
+  const button=document.createElement('button');button.type='button';button.className='ghost';button.textContent=t('clearerLayout');button.addEventListener('click',useClearerLayout);note.appendChild(button);
+}
+function useClearerLayout(){
+  const select=document.getElementById('slipsPerPage'),start=+select.value,slips=cardsForPrint().map(c=>cardData(c));
+  for(let n=start-1;n>=1;n--){select.value=n;if(inDocLang(()=>chooseSlipLayout(slips)).scale>=.95)break;}
+  refreshSlipPreview();saveState();
+}
+function safePayments(raw,paid){
+  const records=(Array.isArray(raw)?raw:[]).filter(p=>p && typeof p.id==='string' && Number.isFinite(p.amount) && p.amount!==0).slice(-1000).map(p=>({id:p.id.replace(/[^a-zA-Z0-9-]/g,'').slice(0,64),amount:round2(p.amount),date:/^\d{4}-\d{2}-\d{2}T/.test(String(p.date))?String(p.date).slice(0,30):''}));
+  if(Math.abs(round2(records.reduce((sum,p)=>sum+p.amount,0))-(paid||0))<.005)return records;
+  return paid>0?[{id:'previously-recorded',amount:round2(paid),date:''}]:[];
+}
+function recordPaid(flat,value){
+  const before=flat.paid||0,next=Math.min(nn(value),totalDueOf(flat)),delta=round2(next-before);
+  flat.payments=safePayments(flat.payments,before);
+  if(delta)flat.payments.push({id:'pay-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8),amount:delta,date:new Date().toISOString()});
+  flat.paid=round2(next);
+}
+function commitHistoryChange(change){
+  const before=JSON.parse(JSON.stringify(HISTORY));change();
+  if(!saveHistory()){HISTORY=before;renderHistory();return false;}
+  renderHistory();applyMonthLock();refreshSlipPreview();refreshBackupReminder();saveState();return true;
+}
+function handleHistoryPayment(event){
+  const input=event.target;if(!input.classList.contains('pay-input'))return;
+  const rec=histRec(input.dataset.id),f=rec && rec.flats[+input.dataset.fi];if(!f)return;
+  if(rec.locked){alert(t('lockedError'));renderHistory();return;}
+  HIST_OPEN.add(rec.id);commitHistoryChange(()=>recordPaid(f,input.value));
+}
+function handleHistoryAction(event){
+  const button=event.target.closest('button[data-act]');if(!button)return;
+  const rec=histRec(button.dataset.id);if(!rec)return;const act=button.dataset.act;
+  if(act==='receipt'){printPaymentReceipt(rec.id,+button.dataset.fi);return;}
+  if(act==='report'){printCollectionReport(rec.id);return;}
+  if(act==='lock'){
+    if(!confirm(t(rec.locked?'confirmUnlock':'confirmLock')))return;
+    LAST_LOCK_APPLIED=null;HIST_OPEN.add(rec.id);commitHistoryChange(()=>{rec.locked=!rec.locked;});return;
+  }
+  if(rec.locked){alert(t('lockedError'));return;}
+  if(act==='del' && !confirm(t('msgDelConfirm')))return;
+  HIST_OPEN.add(rec.id);
+  commitHistoryChange(()=>{
+    if(act==='full'){const f=rec.flats[+button.dataset.fi];if(f)recordPaid(f,totalDueOf(f));}
+    else if(act==='allpaid')rec.flats.forEach(f=>recordPaid(f,totalDueOf(f)));
+    else if(act==='del'){HISTORY=HISTORY.filter(r=>r.id!==rec.id);HIST_OPEN.delete(rec.id);}
+  });
+}
+function applyMonthLock(){
+  const rec=currentLockedRecord(),notice=document.getElementById('monthLockNotice');if(!notice)return;
+  const controls='#buildingName,#payNote,#tenantDueDate,#fixedRate,#meterCount,#roundAmounts,#subBody .sub-name,#subBody .sub-phone,#subBody .sub-prev,#subBody .sub-curr,#subBody .sub-rate,#subBody .sub-dues';
+  document.querySelectorAll(controls).forEach(el=>el.disabled=!!rec);
+  notice.hidden=!rec;
+  if(!rec){LAST_LOCK_APPLIED=null;return;}
+  notice.textContent=t('lockedNotice').replace('{m}',formatMonthLabel(rec.id));
+  if(LAST_LOCK_APPLIED!==rec.id){
+    LAST_LOCK_APPLIED=rec.id;
+    document.getElementById('buildingName').value=rec.building;
+    document.getElementById('payNote').value=rec.payNote;
+    document.getElementById('tenantDueDate').value=rec.dueDate;
+    document.getElementById('fixedRate').value=rec.defaultRate;
+    document.getElementById('roundAmounts').checked=rec.roundAmounts===true;
+    document.getElementById('meterCount').value=Math.max(1,Math.min(30,rec.flats.length));
+    rebuildSubTable();applyCardsRaw(rec.flats.map(f=>({...f,rate:f.rate,message:null})));recalcSubTable();
+    document.querySelectorAll(controls).forEach(el=>el.disabled=true);updateBldgSummary();
+  }
+}
+function printPaymentReceipt(id,index){
+  const rec=histRec(id),f=rec && rec.flats[index];if(!f)return;
+  const payments=safePayments(f.payments,f.paid),payment=payments.at(-1);if(!payment){alert(t('noReceipt'));return;}
+  inDocLang(()=>{
+    const title=t(payment.amount<0?'paymentAdjustment':'paymentReceipt');
+    const date=payment.date?new Date(payment.date).toLocaleString(LANG==='bn'?'bn-BD':'en-GB',{timeZone:'Asia/Dhaka'}):t('previouslyRecorded');
+    const items=[[t('bldgName'),rec.building],[t('docMonth'),formatMonthLabel(rec.id)],[t('docTenant'),f.name],[t('receiptNumber'),id+'-'+f.meterId+'-'+payment.id],[t('recordedOn'),date],[t(payment.amount<0?'adjustmentAmount':'paymentAmount'),fmtD(payment.amount)],[t('paidToDate'),fmtD(f.paid)],[t('balanceDue'),fmtD(balanceOf(f))]];
+    printDoc(`<div class="doc"><h1>${esc(title)}</h1><table class="doc-table"><tbody>${items.map(([label,value])=>`<tr><td>${esc(label)}</td><td>${esc(value)}</td></tr>`).join('')}</tbody></table><p>${esc(t('docReceived'))}: ____________________</p></div>`);
+  });
+}
+function backupHash(state,history){
+  const text=JSON.stringify({state,history});let hash=2166136261;
+  for(let i=0;i<text.length;i++)hash=Math.imul(hash^text.charCodeAt(i),16777619);
+  return (hash>>>0).toString(16)+':'+text.length;
+}
+function recordBackupExport(backup){
+  try{setStored('dpdc-backup-status-v1',JSON.stringify({at:new Date().toISOString(),hash:backupHash(backup.state,backup.history)}));refreshBackupReminder();}catch{toast(t('msgStorageFail'));}
+}
+function refreshBackupReminder(){
+  const banner=document.getElementById('backupReminder');if(!banner)return;
+  const meaningful=HISTORY.length>0 || SAVED_SLIP_PRESETS.length>0 || bName() || Array.from(document.querySelectorAll('.sub-card')).some(card=>{const d=cardData(card);return d.curr>0 || d.prev>0 || d.dues>0;});
+  banner.hidden=!meaningful;if(!meaningful)return;
+  let meta={};try{meta=JSON.parse(getStored('dpdc-backup-status-v1')||'{}');}catch{}
+  let text=t('backupNone');
+  if(meta.at){
+    const date=new Date(meta.at);text=t('backupLast').replace('{d}',date.toLocaleString(LANG==='bn'?'bn-BD':'en-GB',{timeZone:'Asia/Dhaka'}));
+    if(meta.hash!==backupHash(collectState(),HISTORY))text+=' · '+t('backupChanged');
+    else if(Date.now()-date.getTime()>7*86400000)text+=' · '+t('backupOld');
+  }
+  banner.replaceChildren(document.createTextNode(text));const button=document.createElement('button');button.type='button';button.className='ghost';button.textContent=t('exportNow');button.addEventListener('click',()=>exportBackup('download'));banner.appendChild(button);
+}
+function showPhotoCaption(card,caption){
+  const panel=card.querySelector('.slip-photo-share');let section=panel.querySelector('.photo-caption');
+  if(!section){
+    section=document.createElement('div');section.className='photo-caption';
+    const label=document.createElement('label'),textarea=document.createElement('textarea'),button=document.createElement('button');
+    textarea.id='caption-'+card.dataset.meterId;textarea.maxLength=5000;label.htmlFor=textarea.id;button.type='button';button.className='ghost';
+    textarea.addEventListener('input',()=>{card.__messageDraft=textarea.value;});
+    button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(textarea.value);toast(t('msgCopied'));}catch{textarea.focus();textarea.select();toast(t('copyManually'));}});
+    section.append(label,textarea,button);panel.appendChild(section);
+  }
+  section.hidden=!caption;section.querySelector('label').textContent=t('photoCaption');section.querySelector('textarea').value=caption;section.querySelector('button').textContent=t('copyMessage');
+}
+document.addEventListener('input',event=>{
+  if(event.target.matches('.sub-prev,.sub-curr')){
+    const card=event.target.closest('.sub-card');card.querySelectorAll('[aria-invalid]').forEach(el=>el.removeAttribute('aria-invalid'));const error=readingError(card);if(error)error.setAttribute('aria-invalid','true');
+  }
+  if(event.target.matches('#prevReading,#currReading,#mainUnits'))document.getElementById('currReading').removeAttribute('aria-invalid');
+});
+document.addEventListener('change',event=>{
+  if(event.target.id==='billingMonth'){LAST_LOCK_APPLIED=null;applyMonthLock();refreshSlipPreview();}
+});
+window.addEventListener('languagechange',()=>{applyMonthLock();refreshBackupReminder();});
+
+/* ---------------- init ---------------- */
+updateOnlineStatus();
+loadHistory();
+if(!loadState()){
+  resetSlabs();
+  rebuildSubTable();
+  toggleDemandFields();
+}
+if(CAN_SHARE_FILES) document.getElementById('shareBackupBtn').style.display = '';
+applyLang();
+renderHistory();
+function updateBldgSummary(){
+  const n = document.getElementById('buildingName').value.trim();
+  const m = document.getElementById('billingMonth').value;
+  const el = document.getElementById('bldgSummary');
+  if(el) el.textContent = [n, formatMonthLabel(m)].filter(Boolean).join(' · ') || t('bldgEmpty');
+}
+document.addEventListener('input', updateBldgSummary);
+document.addEventListener('change', updateBldgSummary);
+updateBldgSummary();
+applyMonthLock();
+refreshSlipPreview();
+refreshBackupReminder();
+if(window.innerWidth < 960 && document.getElementById('buildingName').value.trim()){
+  document.getElementById('buildingDetailsCard').open = false;
+}
+if(window.innerWidth >= 960){
+  const rc = document.querySelector('#panel-sub > .reconcile-card'); if(rc) rc.open = true;
+}
+window.addEventListener('languagechange', updateBldgSummary);
+</script>
+</body>
+</html>

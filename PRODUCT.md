@@ -1,0 +1,3 @@
+# Building Ledger
+
+Offline-first electricity billing for a Dhaka building manager. Local HTML app with Guest mode; billing needs no account. Optional manual Google Drive app-data backups use a public Web OAuth client ID and a tab-only connection. Preserve and migrate DPDC v2 local storage. Jobs: readings, monthly bills, payment collections, sharing, print customization, backups and carry-over. English and Bangla. No automatic WhatsApp sending. Browser Print / Save PDF. Carry-over is a snapshot: historical edits do not rewrite future months. Payments belong to their selected month. Round each line to two decimals; nearest-taka rounding is explicit.
